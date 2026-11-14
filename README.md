@@ -2,7 +2,7 @@
 
 Out-of-tree Linux kernel driver feed for [NNRRWrt](https://github.com/grislux55/nnrrwrt), providing Airoha AN7581/AN7583 xPON MAC control, optical frontend SerDes/BOSA drivers, and optical transceiver firmware.
 
-[NNRRWrt](https://github.com/grislux55/nnrrwrt) 的内核驱动软件包源，提供 Airoha AN7581/AN7583 平台的 xPON MAC 控制器、光前端 SerDes/BOSA 驱动及配套光前端微码固件（基于上游 [pbs05/openwrt-pon-drivers](https://github.com/pbs05/openwrt-pon-drivers) 持续维护）。
+[NNRRWrt](https://github.com/grislux55/nnrrwrt) 的内核驱动软件包源，提供 Airoha AN7581/AN7583 平台的 xPON MAC 控制器、光前端 SerDes/BOSA 驱动及配套光前端微码固件（基于上游 [pbs05/openwrt-pon-drivers](https://github.com/pbs05/openwrt-pon-drivers) 维护）。
 
 ## Packages / 内核模块包
 
@@ -34,7 +34,7 @@ Out-of-tree Linux kernel driver feed for [NNRRWrt](https://github.com/grislux55/
 
 - ✅ tested / 已测试
 - ❓ untested / 未测试
-- ❌ not yet implemented due to the lack of compatible devices / 我没有找到兼容设备，暂未实现
+- ❌ not yet implemented due to the lack of compatible devices / 缺少兼容设备，暂未实现
 
 ## OpenWrt Feed Integration / Feed 接入方式
 

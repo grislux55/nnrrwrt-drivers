@@ -34,7 +34,7 @@ Out-of-tree Linux kernel driver feed for [NNRRWrt](https://github.com/grislux55/
 
 - ✅ tested / 已测试
 - ❓ untested / 未测试
-- ❌ not yet implemented due to the lack of compatible devices / 缺少兼容设备，暂未实现
+- ❌ planned; compatible device required / 待实现，需要兼容设备
 
 ## OpenWrt Feed Integration / Feed 接入方式
 

@@ -510,17 +510,20 @@ out_state:
 static int airoha_xpon_program_profile(struct airoha_xpon *xpon,
                                        const u8 *message)
 {
+	bool xgspon = airoha_xpon_is_xgspon(xpon);
 	u8 index = message[4] & 0x03;
-	u8 line_rate = (message[4] >> 2) & 0x01;
+	bool xgspon_profile = message[4] & BIT(2);
 	u8 version = message[4] >> 4;
 	u8 delimiter_len = message[6] & 0x0f;
 	u8 preamble_len = message[15] & 0x0f;
-	u8 repeat = message[16] & 0x1f;
+	/* XG-PON keeps five repeat-count bits; XGS-PON uses the whole octet. */
+	u8 repeat = xgspon ? message[16] : message[16] & 0x1f;
 	u32 length, psbu, valid_reg, length_reg, pon_tag0, pon_tag1;
 	u32 preamble_reg, delimiter_reg;
 	int ret;
 
-	if (line_rate || delimiter_len > 8 || preamble_len > 8)
+	/* A dual-rate OLT sends both sets; keep the one for the active rate. */
+	if (xgspon_profile != xgspon || delimiter_len > 8 || preamble_len > 8)
 		return -EINVAL;
 
 	length = preamble_len * repeat + delimiter_len;
@@ -931,7 +934,7 @@ static int airoha_xpon_accept_ranging_time(struct airoha_xpon *xpon,
 		if (dest != xpon->onu_id || !absolute)
 			return -EINVAL;
 		xpon->eqd = eqd;
-		airoha_xgpon_write(xpon, AIROHA_XGPON_EQD, eqd);
+		airoha_xpon_write_eqd(xpon);
 		airoha_xpon_set_onu_state(xpon, AIROHA_XGPON_O5);
 		/* O5 marks line activation; service_ready tracks usable service GEMs. */
 		xpon->lifecycle = AIROHA_XPON_OPERATIONAL;
@@ -958,7 +961,7 @@ static int airoha_xpon_accept_ranging_time(struct airoha_xpon *xpon,
 		xpon->eqd += eqd;
 	else
 		xpon->eqd -= min(eqd, xpon->eqd);
-	airoha_xgpon_write(xpon, AIROHA_XGPON_EQD, xpon->eqd);
+	airoha_xpon_write_eqd(xpon);
 
 	return 0;
 }

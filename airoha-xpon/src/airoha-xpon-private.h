@@ -367,6 +367,22 @@ static inline void airoha_pon_phy_update_bits(struct airoha_xpon *xpon, u32 reg,
 	airoha_pon_phy_write(xpon, reg, (old_value & ~mask) | (value & mask));
 }
 
+static inline bool airoha_xpon_is_xgspon(const struct airoha_xpon *xpon)
+{
+	return xpon->active_mode == AIROHA_XPON_MODE_XGSPON;
+}
+
+/*
+ * Ranging_Time counts EqD in 2.48832 Gbit/s bit periods. The MAC register
+ * counts upstream bits, four per period at the XGS-PON 9.95328 Gbit/s rate.
+ */
+static inline void airoha_xpon_write_eqd(struct airoha_xpon *xpon)
+{
+	airoha_xgpon_write(xpon, AIROHA_XGPON_EQD,
+	                   airoha_xpon_is_xgspon(xpon) ? xpon->eqd << 2 :
+	                                                 xpon->eqd);
+}
+
 static inline u32 airoha_xpon_bytes_to_u32(const u8 *bytes)
 {
 	return (u32)bytes[0] << 24 | (u32)bytes[1] << 16 | (u32)bytes[2] << 8 |

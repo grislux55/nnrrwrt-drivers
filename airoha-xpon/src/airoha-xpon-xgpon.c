@@ -104,7 +104,7 @@ static int airoha_xpon_xgpon_resync_tx_locked(struct airoha_xpon *xpon)
 		goto out_restore;
 
 	/* Software resync uses the current OLT EqD when DBG_RESYNC is submitted. */
-	airoha_xgpon_write(xpon, AIROHA_XGPON_EQD, xpon->eqd);
+	airoha_xpon_write_eqd(xpon);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_DBG_RESYNC,
 	                         AIROHA_XGPON_SW_RESYNC_MASK,
 	                         AIROHA_XGPON_SW_RESYNC_MASK);
@@ -416,7 +416,10 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 	airoha_xpon_xgpon_release_mac_interfaces(xpon);
 	airoha_xgpon_write(xpon, AIROHA_XGPON_US_PROF_VLD, 0);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_RSP_TIME,
-	                         AIROHA_XGPON_RESPONSE_TIME_MASK, 0x551);
+	                         AIROHA_XGPON_RESPONSE_TIME_MASK,
+	                         airoha_xpon_is_xgspon(xpon) ?
+	                                 AIROHA_XGPON_RESPONSE_TIME_XGSPON :
+	                                 AIROHA_XGPON_RESPONSE_TIME_XGPON);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_O23_O4_PLOAMU_CTRL,
 	                         AIROHA_XGPON_O23_O4_SOFTWARE_REPLY, 0);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_DBG_CAP_SETTING,

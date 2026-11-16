@@ -916,13 +916,13 @@ static int airoha_xpon_accept_assign_onu_id(struct airoha_xpon *xpon,
 		        "Assign ONU-ID rejected: serial unconfigured\n");
 		return -EINVAL;
 	}
-	/* Broadcast assignments reach multiple ONUs; retain the SN match result. */
+	/* Broadcast assignments reach every ONU; another serial is not ours. */
 	if (memcmp(message + 6, xpon->identity.active_identity.serial_number,
 	           sizeof(xpon->identity.active_identity.serial_number))) {
 		dev_dbg(xpon->dev,
 		        "Assign ONU-ID ignored: serial mismatch, offered ONU-ID=%u\n",
 		        onu_id);
-		return -EINVAL;
+		return -EADDRNOTAVAIL;
 	}
 
 	/*

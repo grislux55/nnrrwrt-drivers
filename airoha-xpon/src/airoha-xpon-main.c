@@ -416,6 +416,8 @@ static const char *airoha_xpon_restart_reason(int reason)
 		return "Disable_Serial_Number";
 	case AIROHA_XGPON_RESTART_ENABLE:
 		return "serial number enabled";
+	case AIROHA_XGPON_RESTART_RX_OVERRUN:
+		return "RX MBI overrun";
 	default:
 		return "OLT Deactivate";
 	}
@@ -483,9 +485,10 @@ static void airoha_xpon_link_work(struct work_struct *work)
 		goto out_requeue;
 
 	/*
-	 * PLOAM handling queues a MAC reset; link_work commits it under
-	 * state_lock. An expired TO1 resets the MAC the same way: activation
-	 * restarts from O1 without the ONU-ID and its OMCC GEM.
+	 * The MAC IRQ thread queues a MAC reset; link_work commits it under
+	 * state_lock. An expired TO1 and a stalled O5 TX burst counter reset
+	 * the MAC the same way: activation restarts from O1 without the
+	 * ONU-ID and its OMCC GEM.
 	 */
 	if (!airoha_xpon_mode_is_epon(xpon->active_mode)) {
 		restart = atomic_xchg(&xpon->mac_restart_pending, 0);
@@ -494,6 +497,8 @@ static void airoha_xpon_link_work(struct work_struct *work)
 				xpon, airoha_xpon_restart_reason(restart));
 		else if (airoha_xpon_xgpon_to1_expired(xpon))
 			airoha_xpon_xgpon_restart_mac(xpon, "TO1 expired");
+		else if (airoha_xpon_xgpon_tx_stalled(xpon))
+			airoha_xpon_xgpon_restart_mac(xpon, "TX burst stalled");
 		if (atomic_xchg(&xpon->data_path_retry_pending, 0))
 			airoha_xpon_retry_data_paths(xpon);
 	}

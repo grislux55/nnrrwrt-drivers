@@ -311,6 +311,21 @@ irqreturn_t airoha_xpon_xgpon_irq(struct airoha_xpon *xpon)
 			(u32)(events & AIROHA_XGPON_INT_ERROR_MASK), fifo_error,
 			tx_error, rx_error, bwm_check);
 
+		/*
+		 * An RX MBI overrun in O5 queues a MAC reset: a field log shows
+		 * it repeating for minutes with the data path dead. An SGL or
+		 * burst FIFO overrun in the same event leaves the MAC running.
+		 */
+		if ((events & AIROHA_XGPON_INT_FIFO_ERROR) &&
+		    READ_ONCE(xpon->onu_state) == AIROHA_XGPON_O5 &&
+		    (fifo_error &
+		     (AIROHA_XGPON_FIFO_ERR_RX_MBI_HEADER_OVERRUN |
+		      AIROHA_XGPON_FIFO_ERR_RX_MBI_PAYLOAD_OVERRUN)) &&
+		    !(fifo_error & (AIROHA_XGPON_FIFO_ERR_SGL_OVERRUN |
+		                    AIROHA_XGPON_FIFO_ERR_BURST_OVERRUN)))
+			atomic_cmpxchg(&xpon->mac_restart_pending, 0,
+			               AIROHA_XGPON_RESTART_RX_OVERRUN);
+
 		if ((events & AIROHA_XGPON_INT_TX_ERROR) &&
 		    (tx_error & AIROHA_XGPON_TX_ERR_LATE_START)) {
 			xpon->stats.tx_late_error_count++;
@@ -609,6 +624,42 @@ void airoha_xpon_xgpon_counters_update(struct airoha_xpon *xpon)
 			(u32)(value - xpon->stats.mib_last[i]);
 		xpon->stats.mib_last[i] = value;
 	}
+}
+
+/*
+ * An O5 ONU bursts at every grant, so a TX burst counter that stops for
+ * AIROHA_XGPON_TX_STALL_MS marks a stalled upstream path. The check arms
+ * once the counter has moved between two samples of one stay in O5, which
+ * keeps it idle on a MAC whose counter does not run in O5.
+ */
+bool airoha_xpon_xgpon_tx_stalled(struct airoha_xpon *xpon)
+{
+	u32 bursts;
+
+	lockdep_assert_held(&xpon->state_lock);
+	if (!xpon->mac_initialized ||
+	    READ_ONCE(xpon->onu_state) != AIROHA_XGPON_O5) {
+		xpon->tx_burst_sampled = false;
+		xpon->tx_burst_counted = false;
+		return false;
+	}
+
+	bursts = airoha_xgpon_read(xpon, AIROHA_XGPON_TX_BURST_CNT);
+	if (!xpon->tx_burst_sampled) {
+		xpon->tx_burst_sampled = true;
+		xpon->tx_burst_last = bursts;
+		return false;
+	}
+	if (bursts != xpon->tx_burst_last) {
+		xpon->tx_burst_last = bursts;
+		xpon->tx_burst_counted = true;
+		xpon->tx_burst_since = jiffies;
+		return false;
+	}
+	return xpon->tx_burst_counted &&
+	       time_after(jiffies,
+	                  xpon->tx_burst_since +
+	                          msecs_to_jiffies(AIROHA_XGPON_TX_STALL_MS));
 }
 
 void airoha_xpon_xgpon_stop_rx(struct airoha_xpon *xpon)

@@ -141,6 +141,7 @@ enum airoha_xgpon_restart_reason {
 	AIROHA_XGPON_RESTART_ONU_ID_CONFLICT,
 	AIROHA_XGPON_RESTART_DISABLE,
 	AIROHA_XGPON_RESTART_ENABLE,
+	AIROHA_XGPON_RESTART_RX_OVERRUN,
 };
 
 /* Nonzero values of tx_resync_pending name the queued TX resync. */
@@ -309,6 +310,11 @@ struct airoha_xpon {
 	enum airoha_xgpon_onu_state onu_state;
 	/* Entering O4 sets the TO1 expiry, in jiffies, under ploam_lock. */
 	unsigned long to1_deadline;
+	/* link_work samples TX_BURST_CNT in O5 for the stall check. */
+	u32 tx_burst_last;
+	unsigned long tx_burst_since;
+	bool tx_burst_sampled;
+	bool tx_burst_counted;
 	u16 onu_id;
 	u32 eqd;
 	bool optical_signal;
@@ -352,6 +358,8 @@ struct airoha_xpon {
 #define AIROHA_XPON_FULL_REINIT_PERIOD 5
 /* TO1 bounds the stay in O4 between Assign_ONU-ID and Ranging_Time. */
 #define AIROHA_XGPON_TO1_MS 10000
+/* An O5 TX burst counter that stops for this long restarts the MAC. */
+#define AIROHA_XGPON_TX_STALL_MS 200000
 
 static inline u32 airoha_xgpon_read(struct airoha_xpon *xpon, u32 reg)
 {

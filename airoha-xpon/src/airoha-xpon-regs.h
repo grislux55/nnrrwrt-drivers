@@ -93,7 +93,12 @@
 	(AIROHA_XGPON_INT_BWM_CHECK_ERROR | AIROHA_XGPON_INT_FIFO_ERROR | \
 	 AIROHA_XGPON_INT_TX_ERROR | AIROHA_XGPON_INT_RX_ERROR)
 
-/* FIFO_ERR_STS[8:7] are W1C; one IRQ can represent multiple MBI RX overruns. */
+/*
+ * FIFO_ERR_STS is W1C; one IRQ can represent multiple overruns. Bits 1:0
+ * report the SGL and burst FIFOs, bits 8:7 the MBI RX FIFOs.
+ */
+#define AIROHA_XGPON_FIFO_ERR_SGL_OVERRUN            BIT(0)
+#define AIROHA_XGPON_FIFO_ERR_BURST_OVERRUN          BIT(1)
 #define AIROHA_XGPON_FIFO_ERR_RX_MBI_HEADER_OVERRUN  BIT(7)
 #define AIROHA_XGPON_FIFO_ERR_RX_MBI_PAYLOAD_OVERRUN BIT(8)
 

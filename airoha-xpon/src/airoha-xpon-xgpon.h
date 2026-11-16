@@ -16,6 +16,7 @@ irqreturn_t airoha_xpon_xgpon_irq(struct airoha_xpon *xpon);
 irqreturn_t airoha_xpon_xgpon_phy_irq(struct airoha_xpon *xpon);
 void airoha_xpon_xgpon_restart_mac(struct airoha_xpon *xpon,
                                    const char *reason);
+bool airoha_xpon_xgpon_tx_stalled(struct airoha_xpon *xpon);
 void airoha_xpon_xgpon_advance(struct airoha_xpon *xpon, u32 phy_events,
                                unsigned long *delay);
 

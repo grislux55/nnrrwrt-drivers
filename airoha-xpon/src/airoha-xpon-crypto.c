@@ -382,6 +382,10 @@ int airoha_xpon_activate_data_key(struct airoha_xpon *xpon, u8 index)
 	if (!ret)
 		airoha_xgpon_write(xpon, AIROHA_XGPON_INT_STATUS,
 		                   AIROHA_XGPON_INT_AES_KEY_SWITCH_DONE);
+	/*
+	 * A missing completion bit is not an error: the stock driver also
+	 * acknowledges it for at most 3 ms and then carries on.
+	 */
 	return 0;
 }
 

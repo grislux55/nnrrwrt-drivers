@@ -911,10 +911,9 @@ irqreturn_t airoha_xpon_epon_irq(struct airoha_xpon *xpon)
 			xpon->epon.sync_time, xpon->tx_armed);
 
 	/* Consume Register Request completion before a coalesced Discovery Gate. */
-	if (events & AIROHA_EPON_INT_REGISTER_REQ_DONE)
+	if (events & AIROHA_EPON_INT_REGISTER_REQ_DONE) {
 		airoha_epon_update_bits(xpon, AIROHA_EPON_MPCP_TIMEOUT_INTERVAL,
 		                        AIROHA_EPON_DISCOVERY_SYNC_UPDATE, 0);
-	if (events & AIROHA_EPON_INT_REGISTER_REQ_DONE) {
 		xpon->epon.mpcp_state = AIROHA_EPON_MPCP_REGISTER_REQUEST;
 		dev_info_ratelimited(
 			xpon->dev,

@@ -554,12 +554,16 @@ static int pon_crypto_debug_show(struct seq_file *m, void *unused)
 		           "activation_keys_programmed: %d\n"
 		           "key_exchange_state: %u\n"
 		           "key_exchange_errors: %u\n"
-		           "current_key_index: 0x%08x\n",
+		           "current_key_index: 0x%08x\n"
+		           "ploam_ik_group: %u\n"
+		           "ploam_ik_switch_pending: %d\n",
 		           xpon->crypto.default_ploam_ik_programmed,
 		           xpon->crypto.activation_keys_programmed,
 		           xpon->crypto.exchange_state,
 		           xpon->crypto.key_exchange_error_count,
-		           airoha_xgpon_read(xpon, AIROHA_XGPON_CUR_KIDX));
+		           airoha_xgpon_read(xpon, AIROHA_XGPON_CUR_KIDX),
+		           xpon->crypto.ploam_ik_index,
+		           xpon->crypto.ploam_ik_switch_pending);
 	mutex_unlock(&xpon->state_lock);
 	return 0;
 }

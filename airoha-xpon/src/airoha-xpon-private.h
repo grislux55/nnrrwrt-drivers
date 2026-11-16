@@ -225,8 +225,14 @@ struct airoha_xpon_crypto_state {
 	u8 key_confirm_digest[16];
 	u8 pending_data_key_index;
 	u8 active_data_key_index;
+	/* PLOAM IK group of the Acknowledge MIC: 0 from O4 on. */
+	u8 ploam_ik_index;
+	/* Group holding the PLOAM IK and KEK of an installed OMCI MSK. */
+	u8 next_ploam_ik_index;
 	bool default_ploam_ik_programmed;
 	bool activation_keys_programmed;
+	/* The OLT's next Request_Registration selects next_ploam_ik_index. */
+	bool ploam_ik_switch_pending;
 };
 
 #define AIROHA_XPON_MAX_DATA_PATHS 32
@@ -452,6 +458,7 @@ int airoha_xpon_crypto_init(struct airoha_xpon *xpon);
 void airoha_xpon_crypto_cleanup(void *data);
 int airoha_xpon_program_activation_keys(struct airoha_xpon *xpon);
 int airoha_xpon_install_omci_msk(struct airoha_xpon *xpon, const u8 key[16]);
+void airoha_xpon_switch_ploam_ik(struct airoha_xpon *xpon);
 int airoha_xpon_aes_encrypt_block(struct airoha_xpon *xpon, const u8 key[16],
                                   const u8 input[16], u8 output[16]);
 int airoha_xpon_aes_cmac_32(struct airoha_xpon *xpon, const u8 key[16],

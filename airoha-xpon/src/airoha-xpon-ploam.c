@@ -650,7 +650,11 @@ static int airoha_xpon_send_ack(struct airoha_xpon *xpon, u8 seq,
 {
 	u8 message[AIROHA_XGPON_PLOAMU_BYTES] = {};
 
-	/* Upstream PLOAM dest/msg/seq occupy bytes 4–7; downstream uses 0–3. */
+	/*
+	 * Byte 3 names the PLOAM IK group for the MIC. Upstream PLOAM
+	 * dest/msg/seq occupy bytes 4–7; downstream uses 0–3.
+	 */
+	message[3] = xpon->crypto.ploam_ik_index;
 	message[4] = xpon->onu_id >> 8;
 	message[5] = xpon->onu_id;
 	message[6] = AIROHA_XGPON_PLOAMU_ACKNOWLEDGE;
@@ -1172,10 +1176,14 @@ static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
 		ret = airoha_xpon_accept_alloc_id(xpon, message);
 		break;
 	case AIROHA_XGPON_PLOAMD_REQUEST_REGISTRATION:
-		if (xpon->onu_state != AIROHA_XGPON_O5 || dest != xpon->onu_id)
+		if (xpon->onu_state != AIROHA_XGPON_O5 ||
+		    dest != xpon->onu_id) {
 			ret = -EINVAL;
-		else
+		} else {
+			/* An OMCI-based MSK takes effect for PLOAM here. */
+			airoha_xpon_switch_ploam_ik(xpon);
 			ret = airoha_xpon_send_registration(xpon, message[3]);
+		}
 		if (ret == -EACCES)
 			ret = 0;
 		break;

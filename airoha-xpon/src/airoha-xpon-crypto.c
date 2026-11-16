@@ -76,6 +76,9 @@ int airoha_xpon_program_activation_keys(struct airoha_xpon *xpon)
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
 	xpon->crypto.generation_failed_type = 0;
+	/* Rewriting both groups voids a parked OMCI-based PLOAM IK and KEK. */
+	xpon->crypto.ploam_ik_index = 0;
+	xpon->crypto.ploam_ik_switch_pending = false;
 
 	for (i = 0; i < ARRAY_SIZE(default_msk); i++)
 		airoha_xgpon_write(xpon, AIROHA_XGPON_MSK_0 + i * 4,
@@ -183,7 +186,8 @@ int airoha_xpon_install_omci_msk(struct airoha_xpon *xpon, const u8 key[16])
 	/*
 	 * The OLT uses the current integrity key for PLOAM after OMCI
 	 * authentication. Switch OIK when MSK derivation completes, leaving the
-	 * new PIK/KEK in the alternate group until PLOAM key activation.
+	 * new PIK/KEK in the alternate group until the OLT's next
+	 * Request_Registration, see airoha_xpon_switch_ploam_ik().
 	 */
 	key_index = airoha_xgpon_read(xpon, AIROHA_XGPON_CUR_KIDX);
 	next_oik1 = !(key_index & AIROHA_XGPON_CUR_OIK_INDEX);
@@ -225,11 +229,42 @@ int airoha_xpon_install_omci_msk(struct airoha_xpon *xpon, const u8 key[16])
 
 	/* Raw OMCI TX descriptors carry the OIK index selected for this epoch. */
 	airoha_xpon_update_omci_link(xpon);
+	xpon->crypto.next_ploam_ik_index = next_pik1;
+	xpon->crypto.ploam_ik_switch_pending = true;
 	dev_info(
 		xpon->dev,
-		"OMCI enhanced-security MSK installed; OIK switched to group%u\n",
-		next_oik1);
+		"OMCI enhanced-security MSK installed; OIK switched to group%u, PIK/KEK group%u waits for Request_Registration\n",
+		next_oik1, next_pik1);
 	return 0;
+}
+
+/*
+ * The OLT's Request_Registration puts the PLOAM IK and KEK of an OMCI-based
+ * MSK into use. Select their group before the Registration reply is queued.
+ */
+void airoha_xpon_switch_ploam_ik(struct airoha_xpon *xpon)
+{
+	u8 index = xpon->crypto.next_ploam_ik_index;
+	u32 select = AIROHA_XGPON_SW_SET_PIK_ENABLE;
+
+	lockdep_assert_held(&xpon->ploam_lock);
+
+	if (!xpon->crypto.ploam_ik_switch_pending)
+		return;
+
+	/* The OIK selector keeps its value; KEK follows the PIK group. */
+	if (index)
+		select |= AIROHA_XGPON_SW_SET_PIK_INDEX;
+	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_SW_SET_KIDX,
+	                         AIROHA_XGPON_SW_SET_PIK_INDEX |
+	                                 AIROHA_XGPON_SW_SET_PIK_ENABLE,
+	                         select);
+	xpon->crypto.ploam_ik_index = index;
+	xpon->crypto.ploam_ik_switch_pending = false;
+	dev_info(
+		xpon->dev,
+		"PLOAM IK and KEK switched to group%u on Request_Registration\n",
+		index);
 }
 
 int airoha_xpon_aes_encrypt_block(struct airoha_xpon *xpon, const u8 key[16],

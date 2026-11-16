@@ -307,6 +307,8 @@ struct airoha_xpon {
 	/* Assign_Alloc-ID queues deferred data paths for link_work. */
 	atomic_t data_path_retry_pending;
 	enum airoha_xgpon_onu_state onu_state;
+	/* Entering O4 sets the TO1 expiry, in jiffies, under ploam_lock. */
+	unsigned long to1_deadline;
 	u16 onu_id;
 	u32 eqd;
 	bool optical_signal;
@@ -348,6 +350,8 @@ struct airoha_xpon {
  * Every fifth recovery from attempt 2 also resets SCU; others reset PMA.
  */
 #define AIROHA_XPON_FULL_REINIT_PERIOD 5
+/* TO1 bounds the stay in O4 between Assign_ONU-ID and Ranging_Time. */
+#define AIROHA_XGPON_TO1_MS 10000
 
 static inline u32 airoha_xgpon_read(struct airoha_xpon *xpon, u32 reg)
 {

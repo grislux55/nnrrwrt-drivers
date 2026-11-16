@@ -421,6 +421,21 @@ static const char *airoha_xpon_restart_reason(int reason)
 	}
 }
 
+/* TO1 expires when O4 outlasts AIROHA_XGPON_TO1_MS without a Ranging_Time. */
+static bool airoha_xpon_xgpon_to1_expired(struct airoha_xpon *xpon)
+{
+	bool expired;
+
+	if (!xpon->mac_initialized)
+		return false;
+	/* ploam_lock pairs onu_state with the deadline written on entering O4. */
+	mutex_lock(&xpon->ploam_lock);
+	expired = xpon->onu_state == AIROHA_XGPON_O4 &&
+	          time_after(jiffies, xpon->to1_deadline);
+	mutex_unlock(&xpon->ploam_lock);
+	return expired;
+}
+
 static void airoha_xpon_link_work(struct work_struct *work)
 {
 	struct airoha_xpon *xpon = container_of(to_delayed_work(work),
@@ -467,12 +482,18 @@ static void airoha_xpon_link_work(struct work_struct *work)
 	    airoha_xpon_epon_recover_tx(xpon))
 		goto out_requeue;
 
-	/* PLOAM handling queues a MAC reset; link_work commits it under state_lock. */
+	/*
+	 * PLOAM handling queues a MAC reset; link_work commits it under
+	 * state_lock. An expired TO1 resets the MAC the same way: activation
+	 * restarts from O1 without the ONU-ID and its OMCC GEM.
+	 */
 	if (!airoha_xpon_mode_is_epon(xpon->active_mode)) {
 		restart = atomic_xchg(&xpon->mac_restart_pending, 0);
 		if (restart)
 			airoha_xpon_xgpon_restart_mac(
 				xpon, airoha_xpon_restart_reason(restart));
+		else if (airoha_xpon_xgpon_to1_expired(xpon))
+			airoha_xpon_xgpon_restart_mac(xpon, "TO1 expired");
 		if (atomic_xchg(&xpon->data_path_retry_pending, 0))
 			airoha_xpon_retry_data_paths(xpon);
 	}

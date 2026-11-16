@@ -2,6 +2,7 @@
 #include <linux/airoha-eth.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
+#include <linux/jiffies.h>
 #include <linux/netdevice.h>
 #include <linux/random.h>
 #include <linux/unaligned.h>
@@ -966,6 +967,7 @@ static int airoha_xpon_accept_assign_onu_id(struct airoha_xpon *xpon,
 		return ret;
 	}
 	xpon->onu_id = onu_id;
+	xpon->to1_deadline = jiffies + msecs_to_jiffies(AIROHA_XGPON_TO1_MS);
 	airoha_xpon_set_onu_state(xpon, AIROHA_XGPON_O4);
 
 	dev_info(

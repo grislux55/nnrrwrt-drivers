@@ -26,7 +26,7 @@ endef
 define KernelPackage/airoha-en7572
   SUBMENU:=Network Devices
   TITLE:=Airoha EN7572 PON frontend
-  DEPENDS:=@(TARGET_airoha_an7581||TARGET_airoha_an7583) +kmod-airoha-pon-frontend
+  DEPENDS:=@(TARGET_airoha_an7581||TARGET_airoha_an7583) +kmod-airoha-pon-frontend +kmod-lib-crc16
   FILES:=$(PKG_BUILD_DIR)/airoha-en7572.ko
   AUTOLOAD:=$(call AutoProbe,airoha-en7572)
 endef

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/bitfield.h>
+#include <linux/crc16.h>
 #include <linux/delay.h>
 #include <airoha-pon-frontend.h>
 #include <linux/firmware.h>
@@ -117,6 +118,12 @@ static const u8 en7572_aw_thresholds[] = {
 #define EN7572_BOB_PGA_CAP    0x93
 #define EN7572_BOB_TSSI_CAL_1 0xb4
 
+/*
+ * The stock bosa record wraps the BOB: the head AA 55, the 512 BOB bytes,
+ * padding, and at 0x3fe the little-endian CRC-16/MODBUS of the BOB bytes.
+ */
+#define EN7572_BOB_RECORD_HEAD 0x55aa
+
 struct en7572 {
 	struct airoha_pon_frontend frontend;
 	struct i2c_client *program;
@@ -166,7 +173,10 @@ static bool en7572_bob_table_valid(const u8 *table)
 	bool has_non_ff = false;
 	unsigned int offset;
 
-	/* BOB has no magic; erased tables contain 0xff or 0x00 throughout. */
+	/*
+	 * The record head is the only magic; the tables carry none, and erased
+	 * ones contain 0xff or 0x00 throughout.
+	 */
 	for (offset = EN7572_BOB_CAL_FIRST; offset <= EN7572_BOB_CAL_LAST;
 	     offset++) {
 		has_nonzero |= table[offset] != 0;
@@ -404,8 +414,70 @@ out_release:
 	return ret;
 }
 
+static int en7572_read_record_u16(struct device *dev, const char *name,
+                                  u16 *value)
+{
+	struct nvmem_cell *cell;
+	size_t size;
+	void *data;
+	int ret = 0;
+
+	cell = nvmem_cell_get(dev, name);
+	if (IS_ERR(cell))
+		return PTR_ERR(cell);
+
+	data = nvmem_cell_read(cell, &size);
+	nvmem_cell_put(cell);
+	if (IS_ERR(data))
+		return PTR_ERR(data);
+
+	if (size == sizeof(*value))
+		*value = get_unaligned_le16(data);
+	else
+		ret = -EINVAL;
+
+	kfree(data);
+	return ret;
+}
+
+/*
+ * Boards that keep the stock bosa record describe its head and CRC as the
+ * optional cells calibration-magic and calibration-crc. The stock driver loads
+ * the BOB without this check, so a mismatch is reported and the tables are used
+ * as before.
+ */
+static const char *en7572_check_bob_record(struct device *dev,
+                                           struct en7572 *en)
+{
+	u16 head, stored, computed;
+	int ret;
+
+	ret = en7572_read_record_u16(dev, "calibration-magic", &head);
+	if (!ret)
+		ret = en7572_read_record_u16(dev, "calibration-crc", &stored);
+	if (ret) {
+		if (ret != -ENOENT)
+			dev_warn(
+				dev,
+				"BOB record head and CRC are unreadable (%d)\n",
+				ret);
+		return "unchecked";
+	}
+
+	computed = crc16(0xffff, en->bob, EN7572_BOB_SIZE);
+	if (head == EN7572_BOB_RECORD_HEAD && stored == computed)
+		return "valid";
+
+	dev_warn(
+		dev,
+		"BOB record check failed: head=0x%04x, expected 0x%04x; CRC=0x%04x, computed 0x%04x\n",
+		head, EN7572_BOB_RECORD_HEAD, stored, computed);
+	return "invalid";
+}
+
 static int en7572_load_bob(struct device *dev, struct en7572 *en)
 {
+	const char *record = "unchecked";
 	struct nvmem_cell *cell;
 	void *data;
 	size_t size;
@@ -457,6 +529,8 @@ static int en7572_load_bob(struct device *dev, struct en7572 *en)
 	memcpy(en->bob, data, EN7572_BOB_SIZE);
 	kfree(data);
 	loaded = true;
+	/* Check the bytes as stored, ahead of the TX DDMI fallback below. */
+	record = en7572_check_bob_record(dev, en);
 
 validate:
 	en->bob_a0_valid = en7572_bob_table_valid(en->bob);
@@ -473,10 +547,10 @@ validate:
 
 	en7572_apply_tx_ddmi_fallback(dev, en);
 
-	dev_info(dev, "BOB %s: A0=%s A2=%s\n",
+	dev_info(dev, "BOB %s: A0=%s A2=%s record=%s\n",
 	         loaded ? "loaded from NVMEM" : "using erased fallback",
 	         en->bob_a0_valid ? "valid" : "empty",
-	         en->bob_a2_valid ? "valid" : "empty");
+	         en->bob_a2_valid ? "valid" : "empty", record);
 
 	return 0;
 }

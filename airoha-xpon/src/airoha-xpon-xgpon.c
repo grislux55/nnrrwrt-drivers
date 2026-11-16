@@ -148,6 +148,14 @@ void airoha_xpon_set_onu_state(struct airoha_xpon *xpon,
 	airoha_xpon_leds_update(xpon);
 }
 
+/* A reset MAC rests in O7 while the OLT's emergency stop is in force. */
+static enum airoha_xgpon_onu_state
+airoha_xpon_xgpon_idle_state(struct airoha_xpon *xpon)
+{
+	return READ_ONCE(xpon->emergency_stop) ? AIROHA_XGPON_O7 :
+	                                         AIROHA_XGPON_O1;
+}
+
 void airoha_xpon_update_omci_link(struct airoha_xpon *xpon)
 {
 	const struct airoha_xpon_mode_info *mode;
@@ -406,6 +414,8 @@ airoha_xpon_xgpon_reset_and_enable_digital_rx(struct airoha_xpon *xpon)
 
 static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 {
+	bool stopped;
+
 	if (READ_ONCE(xpon->stopping))
 		return -ESHUTDOWN;
 
@@ -448,7 +458,9 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 	xpon->crypto.key_exchange_error_count = 0;
 	airoha_xpon_clear_assignment(xpon);
 	airoha_xpon_clear_tconts(xpon);
-	airoha_xpon_set_onu_state(xpon, AIROHA_XGPON_O2_3);
+	stopped = READ_ONCE(xpon->emergency_stop);
+	airoha_xpon_set_onu_state(xpon, stopped ? AIROHA_XGPON_O7 :
+	                                          AIROHA_XGPON_O2_3);
 
 	/* Clear bootloader state before enabling activation interrupts. */
 	airoha_xpon_drain_ploamd(xpon);
@@ -462,6 +474,13 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 	xpon->xgpon_irq_enabled = true;
 	xpon->mac_initialized = true;
 	xpon->lifecycle = AIROHA_XPON_PROTOCOL_ACTIVATING;
+
+	if (stopped) {
+		dev_warn(
+			xpon->dev,
+			"XGTC in sync; MAC held in O7 by Disable_Serial_Number, upstream TX remains disabled\n");
+		return 0;
+	}
 
 	dev_info(
 		xpon->dev,
@@ -603,6 +622,8 @@ void airoha_xpon_xgpon_stop_rx(struct airoha_xpon *xpon)
 		xpon->xgpon_irq_enabled = false;
 		synchronize_irq(xpon->mac_irq);
 	}
+	/* This reset serves every MAC reset the quiesced IRQ thread queued. */
+	atomic_set(&xpon->mac_restart_pending, 0);
 
 	airoha_xpon_xgpon_counters_update(xpon);
 	ret = airoha_pcs_pon_stop_rx(xpon->pcs);
@@ -617,7 +638,7 @@ void airoha_xpon_xgpon_stop_rx(struct airoha_xpon *xpon)
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_SW_RST,
 	                         AIROHA_XGPON_MAC_RESET_RELEASED, 0);
 	airoha_xpon_clear_assignment(xpon);
-	xpon->onu_state = AIROHA_XGPON_O1;
+	xpon->onu_state = airoha_xpon_xgpon_idle_state(xpon);
 	xpon->mac_initialized = false;
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
@@ -634,12 +655,14 @@ void airoha_xpon_xgpon_restart_mac(struct airoha_xpon *xpon, const char *reason)
 	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_ENABLE, 0);
 	xpon->xgpon_irq_enabled = false;
 	synchronize_irq(xpon->mac_irq);
+	/* This reset serves every MAC reset the quiesced IRQ thread queued. */
+	atomic_set(&xpon->mac_restart_pending, 0);
 	if (xpon->mac_initialized)
 		airoha_xpon_xgpon_stop_mac_interfaces(xpon, reason);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_SW_RST,
 	                         AIROHA_XGPON_MAC_RESET_RELEASED, 0);
 	airoha_xpon_clear_assignment(xpon);
-	airoha_xpon_set_onu_state(xpon, AIROHA_XGPON_O1);
+	airoha_xpon_set_onu_state(xpon, airoha_xpon_xgpon_idle_state(xpon));
 	xpon->mac_initialized = false;
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
@@ -718,7 +741,10 @@ static void airoha_xpon_xgpon_advance_xgtc(struct airoha_xpon *xpon,
 				return;
 			}
 		}
+		/* ploam_lock orders this against Disable_Serial_Number handling. */
+		mutex_lock(&xpon->ploam_lock);
 		ret = airoha_xpon_try_arm_upstream(xpon);
+		mutex_unlock(&xpon->ploam_lock);
 		if (ret) {
 			xpon->last_start_error = ret;
 			dev_warn_ratelimited(

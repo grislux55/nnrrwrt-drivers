@@ -39,7 +39,8 @@ int airoha_xpon_try_arm_upstream(struct airoha_xpon *xpon)
 	    !xpon->crypto.default_ploam_ik_programmed ||
 	    !xpon->crypto.activation_keys_programmed ||
 	    !xpon->identity.active_identity.serial_configured ||
-	    !READ_ONCE(xpon->burst_profile_programmed))
+	    !READ_ONCE(xpon->burst_profile_programmed) ||
+	    READ_ONCE(xpon->emergency_stop))
 		return 0;
 	if (xpon->onu_state != AIROHA_XGPON_O2_3 &&
 	    xpon->onu_state != AIROHA_XGPON_O4 &&
@@ -113,6 +114,7 @@ void airoha_xpon_clear_assignment(struct airoha_xpon *xpon)
 #define AIROHA_XGPON_PLOAMD_ASSIGN_ONU_ID        0x03
 #define AIROHA_XGPON_PLOAMD_RANGING_TIME         0x04
 #define AIROHA_XGPON_PLOAMD_DEACTIVATE           0x05
+#define AIROHA_XGPON_PLOAMD_DISABLE_SN           0x06
 #define AIROHA_XGPON_PLOAMD_REQUEST_REGISTRATION 0x09
 #define AIROHA_XGPON_PLOAMD_ASSIGN_ALLOC_ID      0x0a
 #define AIROHA_XGPON_PLOAMD_KEY_CONTROL          0x0d
@@ -127,6 +129,12 @@ void airoha_xpon_clear_assignment(struct airoha_xpon *xpon)
 
 /* An O5 EqD step of 0x100 register units or more resynchronises TX. */
 #define AIROHA_XGPON_EQD_DIRECT_STEP 0x100
+
+/* Disable_Serial_Number octet 5 selects the operation. */
+#define AIROHA_XGPON_DISABLE_SN_ENABLE_ONE  0x00
+#define AIROHA_XGPON_DISABLE_SN_DISABLE_ALL 0x0f
+#define AIROHA_XGPON_DISABLE_SN_ENABLE_ALL  0xf0
+#define AIROHA_XGPON_DISABLE_SN_DISABLE_ONE 0xff
 
 /* 0x3fe is accepted as a broadcast destination beside 0x3ff. */
 static bool airoha_xpon_ploam_broadcast(u16 dest)
@@ -1075,6 +1083,70 @@ static int airoha_xpon_accept_alloc_id(struct airoha_xpon *xpon,
 	return ret;
 }
 
+/*
+ * Disable_Serial_Number closes the burst gate and enters O7 at once.
+ * link_work then resets the MAC, and every later MAC reset stays in O7
+ * until the OLT enables the serial number again.
+ */
+static int airoha_xpon_accept_disable_sn(struct airoha_xpon *xpon,
+                                         const u8 *message)
+{
+	const struct airoha_xpon_identity *identity =
+		&xpon->identity.active_identity;
+	u16 dest = get_unaligned_be16(message);
+	bool stopped = READ_ONCE(xpon->emergency_stop);
+	bool serial_match, stop;
+
+	if (!airoha_xpon_ploam_broadcast(dest))
+		return -EINVAL;
+
+	serial_match = identity->serial_configured &&
+	               !memcmp(message + 5, identity->serial_number,
+	                       sizeof(identity->serial_number));
+	switch (message[4]) {
+	case AIROHA_XGPON_DISABLE_SN_DISABLE_ONE:
+		if (!serial_match)
+			return -EADDRNOTAVAIL;
+		fallthrough;
+	case AIROHA_XGPON_DISABLE_SN_DISABLE_ALL:
+		stop = true;
+		break;
+	case AIROHA_XGPON_DISABLE_SN_ENABLE_ONE:
+		if (!serial_match)
+			return -EADDRNOTAVAIL;
+		fallthrough;
+	case AIROHA_XGPON_DISABLE_SN_ENABLE_ALL:
+		stop = false;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	/* The OLT repeats the message; only a change of direction acts. */
+	if (stop == stopped)
+		return 0;
+
+	WRITE_ONCE(xpon->emergency_stop, stop);
+	if (stop) {
+		airoha_xpon_set_onu_state(xpon, AIROHA_XGPON_O7);
+		airoha_xpon_disarm_upstream(xpon, "Disable_Serial_Number");
+		atomic_set(&xpon->mac_restart_pending,
+		           AIROHA_XGPON_RESTART_DISABLE);
+		dev_warn(
+			xpon->dev,
+			"PLOAM: Disable_Serial_Number mode=0x%02x; upstream TX disabled, entering O7\n",
+			message[4]);
+	} else {
+		atomic_set(&xpon->mac_restart_pending,
+		           AIROHA_XGPON_RESTART_ENABLE);
+		dev_info(
+			xpon->dev,
+			"PLOAM: Disable_Serial_Number mode=0x%02x; leaving O7\n",
+			message[4]);
+	}
+	return 0;
+}
+
 static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
                                      const u8 *message)
 {
@@ -1085,12 +1157,14 @@ static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
 	if (!(message[AIROHA_XGPON_PLOAMD_BYTES - 1] & BIT(0)))
 		return -EBADMSG;
 
+	/* O7 listens for Disable_Serial_Number only. */
+	if (xpon->onu_state == AIROHA_XGPON_O7 &&
+	    message[2] != AIROHA_XGPON_PLOAMD_DISABLE_SN)
+		return -EPERM;
+
 	switch (message[2]) {
 	case AIROHA_XGPON_PLOAMD_PROFILE:
 		ret = airoha_xpon_accept_profile(xpon, message);
-		/* Profiles for another ONU or line rate stay out of the counters. */
-		if (ret == -EADDRNOTAVAIL)
-			return ret;
 		break;
 	case AIROHA_XGPON_PLOAMD_ASSIGN_ONU_ID:
 		ret = airoha_xpon_accept_assign_onu_id(xpon, message);
@@ -1125,11 +1199,17 @@ static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
 			ret = 0;
 		}
 		break;
+	case AIROHA_XGPON_PLOAMD_DISABLE_SN:
+		ret = airoha_xpon_accept_disable_sn(xpon, message);
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
 	}
 
+	/* Messages for another ONU or line rate stay out of the counters. */
+	if (ret == -EADDRNOTAVAIL)
+		return ret;
 	if (!ret)
 		xpon->stats.ploamd_accepted++;
 	else

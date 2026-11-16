@@ -412,6 +412,10 @@ static const char *airoha_xpon_restart_reason(int reason)
 	switch (reason) {
 	case AIROHA_XGPON_RESTART_ONU_ID_CONFLICT:
 		return "ONU-ID reassigned";
+	case AIROHA_XGPON_RESTART_DISABLE:
+		return "Disable_Serial_Number";
+	case AIROHA_XGPON_RESTART_ENABLE:
+		return "serial number enabled";
 	default:
 		return "OLT Deactivate";
 	}

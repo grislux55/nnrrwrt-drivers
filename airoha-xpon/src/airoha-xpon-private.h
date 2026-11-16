@@ -139,6 +139,8 @@ enum airoha_xgpon_onu_state {
 enum airoha_xgpon_restart_reason {
 	AIROHA_XGPON_RESTART_DEACTIVATE = 1,
 	AIROHA_XGPON_RESTART_ONU_ID_CONFLICT,
+	AIROHA_XGPON_RESTART_DISABLE,
+	AIROHA_XGPON_RESTART_ENABLE,
 };
 
 /* Nonzero values of tx_resync_pending name the queued TX resync. */
@@ -316,6 +318,12 @@ struct airoha_xpon {
 	bool mac_initialized;
 	bool burst_profile_programmed;
 	bool tx_armed;
+	/*
+	 * Disable_Serial_Number sets and clears the emergency stop under
+	 * ploam_lock. MAC resets read it once the MAC IRQ is quiet and hold the
+	 * ONU in O7 while it is set. The flag is lost on module unload.
+	 */
+	bool emergency_stop;
 	/* The userspace agent publishes service readiness after operator authentication. */
 	bool service_ready;
 	bool stopping;

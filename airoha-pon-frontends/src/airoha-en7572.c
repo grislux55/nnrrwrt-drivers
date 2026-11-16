@@ -298,6 +298,37 @@ static int en7572_read_be16(struct i2c_client *client, u16 reg, u16 *value)
 	return ret;
 }
 
+struct en7572_ddmi {
+	u16 temperature;
+	u16 voltage;
+	u16 tx_bias;
+	u16 tx_power;
+	u16 rx_power;
+};
+
+/* The five DDMI words at 0x60–0x69 are consecutive: one transfer reads them. */
+static int en7572_read_ddmi(struct en7572 *en, struct en7572_ddmi *ddmi)
+{
+	u8 data[EN7572_RX_POWER_REG + 2 - EN7572_TEMPERATURE_REG];
+	int ret;
+
+	ret = en7572_read(en->runtime, EN7572_TEMPERATURE_REG, data,
+	                  sizeof(data));
+	if (ret)
+		return ret;
+
+	ddmi->temperature = get_unaligned_be16(data);
+	ddmi->voltage = get_unaligned_be16(data + EN7572_VOLTAGE_REG -
+	                                   EN7572_TEMPERATURE_REG);
+	ddmi->tx_bias = get_unaligned_be16(data + EN7572_TX_BIAS_REG -
+	                                   EN7572_TEMPERATURE_REG);
+	ddmi->tx_power = get_unaligned_be16(data + EN7572_TX_POWER_REG -
+	                                    EN7572_TEMPERATURE_REG);
+	ddmi->rx_power = get_unaligned_be16(data + EN7572_RX_POWER_REG -
+	                                    EN7572_TEMPERATURE_REG);
+	return 0;
+}
+
 static int en7572_read_u32(struct i2c_client *client, u16 reg, u32 *value)
 {
 	u8 data[4];
@@ -614,7 +645,7 @@ static void en7572_log_state(struct en7572 *en, const char *tag)
 {
 	u8 fw = 0, mcu_idle = 0, los = 0;
 	u16 alarm = 0, warning = 0, rssi = 0;
-	u16 temp = 0, vcc = 0, bias = 0, tx_power = 0, rx_power = 0;
+	struct en7572_ddmi ddmi = {};
 	u32 txdis = 0, sys = 0;
 	int ret;
 
@@ -638,15 +669,7 @@ static void en7572_log_state(struct en7572 *en, const char *tag)
 	if (!ret)
 		ret = en7572_read_u16(en->runtime, EN7572_RSSI_ADC_REG, &rssi);
 	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_TEMPERATURE_REG, &temp);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_VOLTAGE_REG, &vcc);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_TX_BIAS_REG, &bias);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_TX_POWER_REG, &tx_power);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_RX_POWER_REG, &rx_power);
+		ret = en7572_read_ddmi(en, &ddmi);
 	mutex_unlock(&en->lock);
 
 	if (ret) {
@@ -657,9 +680,9 @@ static void en7572_log_state(struct en7572 *en, const char *tag)
 
 	dev_info(&en->program->dev,
 	         "state[%s] fw=0x%02x mcu_idle=0x%02x los=0x%02x txdis=0x%08x sys=0x%08x alarm=0x%04x warn=0x%04x rssi=0x%04x temp=0x%04x vcc=0x%04x bias=0x%04x txp=0x%04x rxp=0x%04x prepared=%u gate=%u\n",
-	         tag, fw, mcu_idle, los, txdis, sys, alarm, warning, rssi, temp,
-	         vcc, bias, tx_power, rx_power, en->prepared,
-	         en->tx_gate_enabled);
+	         tag, fw, mcu_idle, los, txdis, sys, alarm, warning, rssi,
+	         ddmi.temperature, ddmi.voltage, ddmi.tx_bias, ddmi.tx_power,
+	         ddmi.rx_power, en->prepared, en->tx_gate_enabled);
 }
 
 /*
@@ -757,6 +780,9 @@ static void en7572_sample_work(struct work_struct *work)
 	                                 sample_work);
 	unsigned int shot = en->sample_shot;
 
+	/* The captures follow an open gate; a closed one ends the series. */
+	if (!READ_ONCE(en->tx_gate_enabled))
+		return;
 	if (shot >= ARRAY_SIZE(en7572_sample_ms))
 		return;
 
@@ -1046,28 +1072,19 @@ en7572_get_diagnostics(struct airoha_pon_frontend *frontend,
                        struct airoha_pon_frontend_diagnostics *diagnostics)
 {
 	struct en7572 *en = airoha_pon_frontend_priv(frontend);
-	u16 temperature;
+	struct en7572_ddmi ddmi;
 	int bob_base;
 	int ret;
 
 	/* Registers 0x60–0x69 use SFF-8472 linear DDMI units. */
 	mutex_lock(&en->lock);
-	ret = en7572_read_be16(en->runtime, EN7572_TEMPERATURE_REG,
-	                       &temperature);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_VOLTAGE_REG,
-		                       &diagnostics->voltage);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_TX_BIAS_REG,
-		                       &diagnostics->tx_bias);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_TX_POWER_REG,
-		                       &diagnostics->tx_power);
-	if (!ret)
-		ret = en7572_read_be16(en->runtime, EN7572_RX_POWER_REG,
-		                       &diagnostics->rx_power);
+	ret = en7572_read_ddmi(en, &ddmi);
 	if (!ret) {
-		diagnostics->temperature = (s16)temperature;
+		diagnostics->temperature = (s16)ddmi.temperature;
+		diagnostics->voltage = ddmi.voltage;
+		diagnostics->tx_bias = ddmi.tx_bias;
+		diagnostics->tx_power = ddmi.tx_power;
+		diagnostics->rx_power = ddmi.rx_power;
 		diagnostics->valid = AIROHA_PON_FRONTEND_DIAG_TEMPERATURE |
 		                     AIROHA_PON_FRONTEND_DIAG_VOLTAGE |
 		                     AIROHA_PON_FRONTEND_DIAG_TX_BIAS |
@@ -1153,6 +1170,7 @@ static int en7572_set_tx_enable(struct airoha_pon_frontend *frontend,
 		en->tx_gate_enabled = false;
 		WRITE_ONCE(en->tx_ready_state, false);
 		cancel_delayed_work(&en->ready_work);
+		cancel_delayed_work(&en->sample_work);
 		ret = en7572_update_bits(en, EN7572_BEN_CTRL,
 		                         EN7572_BEN_MODE_MASK,
 		                         EN7572_BEN_MODE_OFF);
@@ -1175,6 +1193,7 @@ static int en7572_unprepare(struct airoha_pon_frontend *frontend)
 	en->prepared = false;
 	WRITE_ONCE(en->tx_ready_state, false);
 	cancel_delayed_work(&en->ready_work);
+	cancel_delayed_work(&en->sample_work);
 	ret = en7572_update_bits(en, EN7572_BEN_CTRL, EN7572_BEN_MODE_MASK,
 	                         EN7572_BEN_MODE_OFF);
 	mutex_unlock(&en->lock);
@@ -1202,6 +1221,7 @@ static int en7572_reset(struct airoha_pon_frontend *frontend)
 	en->tx_gate_enabled = false;
 	WRITE_ONCE(en->tx_ready_state, false);
 	cancel_delayed_work(&en->ready_work);
+	cancel_delayed_work(&en->sample_work);
 	if (en->tx_disable)
 		gpiod_set_value_cansleep(en->tx_disable, 1);
 	ret = en7572_start_md32(en, "recovery");
@@ -1269,7 +1289,7 @@ static int en7572_probe(struct i2c_client *client)
 			dev, PTR_ERR(en->tx_disable),
 			"failed to acquire exclusive ownership of the board TX_DISABLE GPIO\n");
 
-	/* The dummy client reserves EN7572's second I2C address, 0x50. */
+	/* The dummy client reserves EN7572's second I2C address, 0x51. */
 	en->runtime = devm_i2c_new_dummy_device(dev, client->adapter,
 	                                        EN7572_RUNTIME_ADDR);
 	if (IS_ERR(en->runtime))

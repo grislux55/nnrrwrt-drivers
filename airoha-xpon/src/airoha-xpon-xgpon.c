@@ -636,17 +636,27 @@ bool airoha_xpon_xgpon_tx_stalled(struct airoha_xpon *xpon)
 	                          msecs_to_jiffies(AIROHA_XGPON_TX_STALL_MS));
 }
 
+/*
+ * The IRQ thread read-modify-writes INT_ENABLE when it arms or disarms
+ * upstream. Clear the register with the handler quiesced, so that no such
+ * update lands after the clear and leaves sources enabled across the reset.
+ */
+static void airoha_xpon_xgpon_quiesce_irq(struct airoha_xpon *xpon)
+{
+	disable_irq(xpon->mac_irq);
+	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_ENABLE, 0);
+	xpon->xgpon_irq_enabled = false;
+	enable_irq(xpon->mac_irq);
+}
+
 void airoha_xpon_xgpon_stop_rx(struct airoha_xpon *xpon)
 {
 	u32 rx_ctrl;
 	int ret;
 
 	atomic_set(&xpon->tx_resync_pending, 0);
-	if (xpon->xgpon_irq_enabled) {
-		airoha_xgpon_write(xpon, AIROHA_XGPON_INT_ENABLE, 0);
-		xpon->xgpon_irq_enabled = false;
-		synchronize_irq(xpon->mac_irq);
-	}
+	if (xpon->xgpon_irq_enabled)
+		airoha_xpon_xgpon_quiesce_irq(xpon);
 	/* This reset serves every MAC reset the quiesced IRQ thread queued. */
 	atomic_set(&xpon->mac_restart_pending, 0);
 
@@ -676,9 +686,7 @@ void airoha_xpon_xgpon_restart_mac(struct airoha_xpon *xpon, const char *reason)
 {
 	airoha_xpon_xgpon_counters_update(xpon);
 	atomic_set(&xpon->tx_resync_pending, 0);
-	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_ENABLE, 0);
-	xpon->xgpon_irq_enabled = false;
-	synchronize_irq(xpon->mac_irq);
+	airoha_xpon_xgpon_quiesce_irq(xpon);
 	/* This reset serves every MAC reset the quiesced IRQ thread queued. */
 	atomic_set(&xpon->mac_restart_pending, 0);
 	if (xpon->mac_initialized)

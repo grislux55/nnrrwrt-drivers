@@ -21,7 +21,6 @@
 #define AIROHA_XGPON_O23_O4_PLOAMU_CTRL 0x0100
 #define AIROHA_XGPON_ACTIVATION_ST      0x0104
 #define AIROHA_XGPON_RSP_TIME           0x0108
-#define AIROHA_XGPON_RDM_DLY            0x010c
 #define AIROHA_XGPON_EQD                0x0114
 #define AIROHA_XGPON_US_PROF_VLD        0x011c
 #define AIROHA_XGPON_US_PROF_LEN_01     0x0120
@@ -43,13 +42,9 @@
 #define AIROHA_XGPON_CUR_KIDX           0x0318
 #define AIROHA_XGPON_MSK_0              0x0320
 #define AIROHA_XGPON_REGMSK_0           0x0330
-#define AIROHA_XGPON_SK_0               0x0340
 #define AIROHA_XGPON_HW_GENK_0          0x0350
 #define AIROHA_XGPON_PIK0_0             0x0360
 #define AIROHA_XGPON_PIK1_0             0x0370
-#define AIROHA_XGPON_PIK1_1             0x0374
-#define AIROHA_XGPON_PIK1_2             0x0378
-#define AIROHA_XGPON_PIK1_3             0x037c
 #define AIROHA_XGPON_OIK0_0             0x0380
 #define AIROHA_XGPON_OIK1_0             0x0390
 #define AIROHA_XGPON_KEK0_0             0x03a0
@@ -58,17 +53,15 @@
 #define AIROHA_XGPON_PON_TAG_1          0x03c4
 #define AIROHA_XGPON_SW_SET_KIDX        0x03e8
 #define AIROHA_XGPON_DBG_CAP_SETTING    0x0800
-#define AIROHA_XGPON_DBG_BWM_CHK_CTRL   0x0804
 #define AIROHA_XGPON_DBG_BWM_CHK_STS    0x0808
 #define AIROHA_XGPON_DBG_RESYNC         0x082c
 #define AIROHA_XGPON_RX_XGTC_CNT        0x0940
 #define AIROHA_XGPON_TX_BURST_CNT       0x0944
 #define AIROHA_XGPON_RX_PLOAMD_CNT      0x0950
 /* TX_PLOAMU_CNT includes hardware acknowledgements for PLOAMu grants. */
-#define AIROHA_XGPON_TX_PLOAMU_CNT     0x0954
-#define AIROHA_XGPON_RX_XGEM_CNT       0x0968
-#define AIROHA_XGPON_TX_XGEM_CNT       0x096c
-#define AIROHA_XGPON_TX_ACK_PLOAMU_CNT 0x0984
+#define AIROHA_XGPON_TX_PLOAMU_CNT 0x0954
+#define AIROHA_XGPON_RX_XGEM_CNT   0x0968
+#define AIROHA_XGPON_TX_XGEM_CNT   0x096c
 
 /*
  * The first six MAC interrupt bits describe activation. Bit 0 requires

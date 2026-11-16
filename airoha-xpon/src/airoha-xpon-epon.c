@@ -17,7 +17,6 @@
 
 /* XEPON PCS occupies the 0x1000 subwindow of the PON PHY resource. */
 #define AIROHA_XEPON_PCS_BASE                  0x1000
-#define AIROHA_XEPON_PCS_TX_CTRL               (AIROHA_XEPON_PCS_BASE + 0x018)
 #define AIROHA_XEPON_PCS_RX_CTRL               (AIROHA_XEPON_PCS_BASE + 0x01c)
 #define AIROHA_XEPON_PCS_INT_STATUS            (AIROHA_XEPON_PCS_BASE + 0x020)
 #define AIROHA_XEPON_PCS_INT_ENABLE            (AIROHA_XEPON_PCS_BASE + 0x024)

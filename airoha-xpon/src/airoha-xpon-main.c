@@ -407,6 +407,16 @@ static void airoha_xpon_advance_rx_locked(struct airoha_xpon *xpon,
 	}
 }
 
+static const char *airoha_xpon_restart_reason(int reason)
+{
+	switch (reason) {
+	case AIROHA_XGPON_RESTART_ONU_ID_CONFLICT:
+		return "ONU-ID reassigned";
+	default:
+		return "OLT Deactivate";
+	}
+}
+
 static void airoha_xpon_link_work(struct work_struct *work)
 {
 	struct airoha_xpon *xpon = container_of(to_delayed_work(work),
@@ -415,7 +425,7 @@ static void airoha_xpon_link_work(struct work_struct *work)
 	unsigned long delay = msecs_to_jiffies(AIROHA_XPON_LINK_POLL_MS);
 	u32 phy_events = atomic_xchg(&xpon->phy_events, 0);
 	bool requeue;
-	int ret;
+	int restart, ret;
 
 	/* Provider sampling may sleep and runs outside state_lock. */
 	ret = airoha_pon_frontend_get_signal_status(xpon->frontend, &optical);
@@ -453,10 +463,12 @@ static void airoha_xpon_link_work(struct work_struct *work)
 	    airoha_xpon_epon_recover_tx(xpon))
 		goto out_requeue;
 
-	/* IRQ queues Deactivate; link_work commits the plain MAC reset under state_lock. */
+	/* PLOAM handling queues a MAC reset; link_work commits it under state_lock. */
 	if (!airoha_xpon_mode_is_epon(xpon->active_mode)) {
-		if (atomic_xchg(&xpon->mac_restart_pending, 0))
-			airoha_xpon_xgpon_restart_mac(xpon, "OLT Deactivate");
+		restart = atomic_xchg(&xpon->mac_restart_pending, 0);
+		if (restart)
+			airoha_xpon_xgpon_restart_mac(
+				xpon, airoha_xpon_restart_reason(restart));
 		if (atomic_xchg(&xpon->data_path_retry_pending, 0))
 			airoha_xpon_retry_data_paths(xpon);
 	}

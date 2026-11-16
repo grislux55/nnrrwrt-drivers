@@ -135,8 +135,20 @@ enum airoha_xgpon_onu_state {
 	AIROHA_XGPON_O7 = 7,
 };
 
+/* Nonzero values of mac_restart_pending name the queued MAC reset. */
+enum airoha_xgpon_restart_reason {
+	AIROHA_XGPON_RESTART_DEACTIVATE = 1,
+	AIROHA_XGPON_RESTART_ONU_ID_CONFLICT,
+};
+
+/* Nonzero values of tx_resync_pending name the queued TX resync. */
+enum airoha_xgpon_tx_resync_reason {
+	AIROHA_XGPON_TX_RESYNC_LATE_START = 1,
+	AIROHA_XGPON_TX_RESYNC_EQD_STEP,
+};
+
 #define AIROHA_XGPON_BROADCAST_ID 0x03ff
-/* 0x3fe is the global destination accepted by the Deactivate handler. */
+/* 0x3fe is the second broadcast ONU-ID that PLOAMd handlers accept. */
 #define AIROHA_XGPON_ALL_ONU_ID 0x03fe
 
 enum airoha_xgpon_key_exchange_state {
@@ -286,9 +298,9 @@ struct airoha_xpon {
 	int mac_irq;
 	int phy_irq;
 	atomic_t phy_events;
-	/* IRQ queues Deactivate; link_work performs the plain reset. */
+	/* PLOAM handling queues a restart reason; link_work resets the MAC. */
 	atomic_t mac_restart_pending;
-	/* link_work handles TX-late resync under state_lock. */
+	/* link_work resyncs TX under state_lock for the queued reason. */
 	atomic_t tx_resync_pending;
 	/* Assign_Alloc-ID queues deferred data paths for link_work. */
 	atomic_t data_path_retry_pending;

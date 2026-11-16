@@ -306,7 +306,8 @@ irqreturn_t airoha_xpon_xgpon_irq(struct airoha_xpon *xpon)
 		if ((events & AIROHA_XGPON_INT_TX_ERROR) &&
 		    (tx_error & AIROHA_XGPON_TX_ERR_LATE_START)) {
 			xpon->stats.tx_late_error_count++;
-			atomic_set(&xpon->tx_resync_pending, 1);
+			atomic_set(&xpon->tx_resync_pending,
+			           AIROHA_XGPON_TX_RESYNC_LATE_START);
 			mod_delayed_work(system_wq, &xpon->link_work, 0);
 		}
 	}
@@ -317,6 +318,7 @@ irqreturn_t airoha_xpon_xgpon_irq(struct airoha_xpon *xpon)
 			xpon->dev,
 			"PLOAMd FIFO drain reached the per-IRQ safety limit\n");
 	if (atomic_read(&xpon->mac_restart_pending) ||
+	    atomic_read(&xpon->tx_resync_pending) ||
 	    atomic_read(&xpon->data_path_retry_pending))
 		mod_delayed_work(system_wq, &xpon->link_work, 0);
 
@@ -753,20 +755,26 @@ static void airoha_xpon_xgpon_advance_xgtc(struct airoha_xpon *xpon,
 void airoha_xpon_xgpon_advance(struct airoha_xpon *xpon, u32 phy_events,
                                unsigned long *delay)
 {
+	int resync = atomic_xchg(&xpon->tx_resync_pending, 0);
 	int ret;
 
-	if (atomic_xchg(&xpon->tx_resync_pending, 0) && xpon->mac_initialized &&
-	    xpon->tx_armed) {
+	if (resync && xpon->mac_initialized && xpon->tx_armed) {
+		const char *cause = resync == AIROHA_XGPON_TX_RESYNC_EQD_STEP ?
+		                            "EqD step" :
+		                            "late start";
+
 		xpon->stats.tx_resync_count++;
 		ret = airoha_xpon_xgpon_resync_tx_locked(xpon);
 		if (ret) {
 			xpon->stats.tx_resync_failure_count++;
 			dev_warn_ratelimited(
-				xpon->dev, "XG-PON TX late resync failed: %d\n",
+				xpon->dev,
+				"XG-PON TX resync after %s failed: %d\n", cause,
 				ret);
 		} else {
 			dev_info_ratelimited(
-				xpon->dev, "XG-PON TX late resync completed\n");
+				xpon->dev,
+				"XG-PON TX resync after %s completed\n", cause);
 		}
 	}
 

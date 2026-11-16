@@ -120,10 +120,20 @@ void airoha_xpon_clear_assignment(struct airoha_xpon *xpon)
 #define AIROHA_XGPON_PLOAMU_KEY_REPORT           0x05
 #define AIROHA_XGPON_PLOAMU_ACKNOWLEDGE          0x09
 #define AIROHA_XGPON_PLOAM_ACK_OK                0x00
-#define AIROHA_XGPON_PLOAM_ACK_PROCESS_ERROR     0x01
+#define AIROHA_XGPON_PLOAM_ACK_PROCESS_ERROR     0x05
 #define AIROHA_XGPON_KEY_CONTROL_GENERATE        0
 #define AIROHA_XGPON_KEY_CONTROL_CONFIRM         1
 #define AIROHA_XGPON_DATA_KEY_BYTES              16
+
+/* An O5 EqD step of 0x100 register units or more resynchronises TX. */
+#define AIROHA_XGPON_EQD_DIRECT_STEP 0x100
+
+/* 0x3fe is accepted as a broadcast destination beside 0x3ff. */
+static bool airoha_xpon_ploam_broadcast(u16 dest)
+{
+	return dest == AIROHA_XGPON_BROADCAST_ID ||
+	       dest == AIROHA_XGPON_ALL_ONU_ID;
+}
 
 static int airoha_xpon_wait_command(struct airoha_xpon *xpon, u32 reg,
                                     u32 done_mask)
@@ -522,8 +532,10 @@ static int airoha_xpon_program_profile(struct airoha_xpon *xpon,
 	u32 preamble_reg, delimiter_reg;
 	int ret;
 
-	/* A dual-rate OLT sends both sets; keep the one for the active rate. */
-	if (xgspon_profile != xgspon || delimiter_len > 8 || preamble_len > 8)
+	/* A dual-rate OLT sends both sets; skip the one for the other rate. */
+	if (xgspon_profile != xgspon)
+		return -EADDRNOTAVAIL;
+	if (delimiter_len > 8 || preamble_len > 8)
 		return -EINVAL;
 
 	length = preamble_len * repeat + delimiter_len;
@@ -725,7 +737,8 @@ static int airoha_xpon_handle_key_control(struct airoha_xpon *xpon,
 	bool repeated;
 	int ret;
 
-	if (xpon->onu_state != AIROHA_XGPON_O5 || dest != xpon->onu_id)
+	if (xpon->onu_state != AIROHA_XGPON_O5 ||
+	    (dest != xpon->onu_id && !airoha_xpon_ploam_broadcast(dest)))
 		return -EINVAL;
 
 	control = message[5] & BIT(0);
@@ -862,6 +875,27 @@ error:
 	return ret;
 }
 
+static int airoha_xpon_accept_profile(struct airoha_xpon *xpon,
+                                      const u8 *message)
+{
+	u16 dest = get_unaligned_be16(message);
+	/* XG-PON broadcasts profiles to 0x3ff; XGS-PON also uses 0x3fe. */
+	bool broadcast = dest == AIROHA_XGPON_BROADCAST_ID ||
+	                 (airoha_xpon_is_xgspon(xpon) &&
+	                  dest == AIROHA_XGPON_ALL_ONU_ID);
+	int ret;
+
+	if (!broadcast && dest != xpon->onu_id)
+		return -EADDRNOTAVAIL;
+
+	ret = airoha_xpon_program_profile(xpon, message);
+	/* A directed profile is acknowledged once it is programmed. */
+	if (!ret && !broadcast)
+		airoha_xpon_send_ack(xpon, message[3],
+		                     AIROHA_XGPON_PLOAM_ACK_OK);
+	return ret;
+}
+
 static int airoha_xpon_accept_assign_onu_id(struct airoha_xpon *xpon,
                                             const u8 *message)
 {
@@ -869,7 +903,7 @@ static int airoha_xpon_accept_assign_onu_id(struct airoha_xpon *xpon,
 	u16 onu_id = (message[4] & 0x03) << 8 | message[5];
 	int ret;
 
-	if (dest != AIROHA_XGPON_BROADCAST_ID) {
+	if (!airoha_xpon_ploam_broadcast(dest)) {
 		dev_dbg(xpon->dev, "Assign ONU-ID rejected: destination=%u\n",
 		        dest);
 		return -EINVAL;
@@ -891,10 +925,21 @@ static int airoha_xpon_accept_assign_onu_id(struct airoha_xpon *xpon,
 	/*
 	 * The OLT may repeat Assign ONU-ID before receiving Registration. Reuse
 	 * the current assignment for matching SN and ONU-ID across O4/O5 retries.
+	 * A different ONU-ID for this SN drops the assignment: link_work resets
+	 * the MAC and activation restarts from O1.
 	 */
 	if (xpon->onu_state == AIROHA_XGPON_O4 ||
-	    xpon->onu_state == AIROHA_XGPON_O5)
-		return xpon->onu_id == onu_id ? 0 : -EINVAL;
+	    xpon->onu_state == AIROHA_XGPON_O5) {
+		if (xpon->onu_id == onu_id)
+			return 0;
+		dev_info(
+			xpon->dev,
+			"PLOAM: Assign ONU-ID=%u replaces ONU-ID=%u; restarting activation\n",
+			onu_id, xpon->onu_id);
+		atomic_set(&xpon->mac_restart_pending,
+		           AIROHA_XGPON_RESTART_ONU_ID_CONFLICT);
+		return 0;
+	}
 	if (xpon->onu_state != AIROHA_XGPON_O2_3)
 		return -EINVAL;
 
@@ -929,9 +974,12 @@ static int airoha_xpon_accept_ranging_time(struct airoha_xpon *xpon,
 	u32 eqd = get_unaligned_be32(message + 5);
 	bool absolute = message[4] & BIT(0);
 	bool positive = !(message[4] & BIT(1));
+	bool directed = dest == xpon->onu_id;
+	u32 new_eqd;
+	u64 step;
 
 	if (xpon->onu_state == AIROHA_XGPON_O4) {
-		if (dest != xpon->onu_id || !absolute)
+		if (!directed || !absolute)
 			return -EINVAL;
 		xpon->eqd = eqd;
 		airoha_xpon_write_eqd(xpon);
@@ -951,18 +999,36 @@ static int airoha_xpon_accept_ranging_time(struct airoha_xpon *xpon,
 		return 0;
 	}
 
-	if (xpon->onu_state != AIROHA_XGPON_O5 ||
-	    (dest != xpon->onu_id && dest != AIROHA_XGPON_BROADCAST_ID))
+	if (xpon->onu_state != AIROHA_XGPON_O5)
+		return -EINVAL;
+	/* O5 takes a relative delay from broadcast, an absolute one directed. */
+	if (!directed && (absolute || !airoha_xpon_ploam_broadcast(dest)))
 		return -EINVAL;
 
 	if (absolute)
-		xpon->eqd = eqd;
+		new_eqd = eqd;
 	else if (positive)
-		xpon->eqd += eqd;
+		new_eqd = xpon->eqd + eqd;
 	else
-		xpon->eqd -= min(eqd, xpon->eqd);
-	airoha_xpon_write_eqd(xpon);
+		new_eqd = xpon->eqd - min(eqd, xpon->eqd);
 
+	step = new_eqd > xpon->eqd ? new_eqd - xpon->eqd : xpon->eqd - new_eqd;
+	if (airoha_xpon_is_xgspon(xpon))
+		step <<= 2;
+	xpon->eqd = new_eqd;
+	/*
+	 * A small step is written while bursts continue. A larger one is left
+	 * to link_work, which stops upstream and resynchronises TX around it.
+	 */
+	if (step < AIROHA_XGPON_EQD_DIRECT_STEP)
+		airoha_xpon_write_eqd(xpon);
+	else
+		atomic_set(&xpon->tx_resync_pending,
+		           AIROHA_XGPON_TX_RESYNC_EQD_STEP);
+
+	if (directed && eqd)
+		airoha_xpon_send_ack(xpon, message[3],
+		                     AIROHA_XGPON_PLOAM_ACK_OK);
 	return 0;
 }
 
@@ -975,16 +1041,27 @@ static int airoha_xpon_accept_alloc_id(struct airoha_xpon *xpon,
 	u8 index;
 	int ret;
 
-	if (xpon->onu_state != AIROHA_XGPON_O5 || dest != xpon->onu_id ||
-	    alloc_id == xpon->onu_id)
+	if (xpon->onu_state != AIROHA_XGPON_O5 || dest != xpon->onu_id)
 		return -EINVAL;
 
-	if (type == 1)
+	/* The default Alloc-ID follows the ONU-ID and needs no table entry. */
+	if (alloc_id == xpon->onu_id) {
+		airoha_xpon_send_ack(xpon, message[3],
+		                     AIROHA_XGPON_PLOAM_ACK_OK);
+		return 0;
+	}
+
+	if (type == 1) {
 		ret = airoha_xpon_find_or_create_tcont(xpon, alloc_id, &index);
-	else if (type == 0xff)
+	} else if (type == 0xff) {
 		ret = airoha_xpon_remove_tcont(xpon, alloc_id);
-	else
-		ret = -EINVAL;
+		/* Releasing an Alloc-ID that is not installed succeeds. */
+		if (ret == -ENOENT)
+			ret = 0;
+	} else {
+		/* An unknown Alloc-ID type gets no Acknowledge. */
+		return -EINVAL;
+	}
 
 	if (ret)
 		airoha_xpon_send_ack(xpon, message[3],
@@ -1010,9 +1087,10 @@ static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
 
 	switch (message[2]) {
 	case AIROHA_XGPON_PLOAMD_PROFILE:
-		if (dest != AIROHA_XGPON_BROADCAST_ID && dest != xpon->onu_id)
-			return -EADDRNOTAVAIL;
-		ret = airoha_xpon_program_profile(xpon, message);
+		ret = airoha_xpon_accept_profile(xpon, message);
+		/* Profiles for another ONU or line rate stay out of the counters. */
+		if (ret == -EADDRNOTAVAIL)
+			return ret;
 		break;
 	case AIROHA_XGPON_PLOAMD_ASSIGN_ONU_ID:
 		ret = airoha_xpon_accept_assign_onu_id(xpon, message);
@@ -1042,7 +1120,8 @@ static int airoha_xpon_handle_ploamd(struct airoha_xpon *xpon,
 			/* PLAIN_RESET preserves PHY sync; link_work resets the MAC after
 			 * releasing ploam_lock.
 			 */
-			atomic_set(&xpon->mac_restart_pending, 1);
+			atomic_set(&xpon->mac_restart_pending,
+			           AIROHA_XGPON_RESTART_DEACTIVATE);
 			ret = 0;
 		}
 		break;

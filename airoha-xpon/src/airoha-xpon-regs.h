@@ -34,6 +34,7 @@
 #define AIROHA_XGPON_TCONT_ID_STS       0x0254
 #define AIROHA_XGPON_GEM_PORT_CFG       0x0274
 #define AIROHA_XGPON_GEM_PORT_STS       0x0278
+#define AIROHA_XGPON_IDLE_GEM_CTRL      0x0280
 #define AIROHA_XGPON_PLOAMU_FIFO_STS    0x0300
 #define AIROHA_XGPON_PLOAMU_WDATA       0x0304
 #define AIROHA_XGPON_PLOAMD_FIFO_STS    0x0308
@@ -262,6 +263,14 @@
 #define AIROHA_XGPON_RESPONSE_TIME_XGPON   0x0551
 #define AIROHA_XGPON_RESPONSE_TIME_XGSPON  0x1600
 #define AIROHA_XGPON_O23_O4_SOFTWARE_REPLY BIT(0)
+
+/*
+ * IDLE_GEM_CTRL[15:0] is the idle XGEM threshold. The reset value 0x200 is
+ * what stock writes on FPGA builds; on silicon it writes the values below.
+ */
+#define AIROHA_XGPON_IDLE_GEM_THRESHOLD_MASK   GENMASK(15, 0)
+#define AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGPON  0x001a
+#define AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGSPON 0x0034
 
 /*
  * PLOAMd FIFO used counts 32-bit words. A downstream PLOAM occupies 13 words;

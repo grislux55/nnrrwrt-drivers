@@ -447,6 +447,12 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 	                         airoha_xpon_is_xgspon(xpon) ?
 	                                 AIROHA_XGPON_RESPONSE_TIME_XGSPON :
 	                                 AIROHA_XGPON_RESPONSE_TIME_XGPON);
+	airoha_xgpon_update_bits(
+		xpon, AIROHA_XGPON_IDLE_GEM_CTRL,
+		AIROHA_XGPON_IDLE_GEM_THRESHOLD_MASK,
+		airoha_xpon_is_xgspon(xpon) ?
+			AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGSPON :
+			AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGPON);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_O23_O4_PLOAMU_CTRL,
 	                         AIROHA_XGPON_O23_O4_SOFTWARE_REPLY, 0);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_DBG_CAP_SETTING,

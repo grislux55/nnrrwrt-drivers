@@ -617,7 +617,7 @@ static int airoha_xpon_program_profile(struct airoha_xpon *xpon,
 	}
 
 	/* Clear stale W1C errors before publishing profile validity. */
-	airoha_xpon_clear_mac_errors(xpon, true);
+	airoha_xpon_clear_mac_errors(xpon);
 	airoha_xgpon_write(xpon, AIROHA_XGPON_US_PROF_VLD, valid_reg);
 
 	return 0;
@@ -628,10 +628,8 @@ static int airoha_xpon_send_ploamu(struct airoha_xpon *xpon, const u8 *message)
 	u32 status;
 	unsigned int i;
 
-	if (!xpon->tx_armed) {
-		xpon->stats.ploamu_blocked++;
+	if (!xpon->tx_armed)
 		return -EACCES;
-	}
 
 	status = airoha_xgpon_read(xpon, AIROHA_XGPON_PLOAMU_FIFO_STS);
 	if (status & AIROHA_XGPON_PLOAMU_FIFO_OVERRUN)
@@ -702,8 +700,7 @@ static int airoha_xpon_send_key_report(struct airoha_xpon *xpon, u8 seq,
 	memcpy(message + 12, fragment, AIROHA_XGPON_DATA_KEY_BYTES);
 
 	ret = airoha_xpon_send_ploamu(xpon, message);
-	if (!ret) {
-		xpon->crypto.key_report_tx_count++;
+	if (!ret)
 		dev_info(xpon->dev,
 		         "Key_Report sent: seq=%u type=%s data-key-index=%u\n",
 		         seq,
@@ -711,7 +708,6 @@ static int airoha_xpon_send_key_report(struct airoha_xpon *xpon, u8 seq,
 		                 "generate" :
 		                 "confirm",
 		         data_key_index);
-	}
 	return ret;
 }
 
@@ -753,7 +749,6 @@ static int airoha_xpon_handle_key_control(struct airoha_xpon *xpon,
 	control = message[5] & BIT(0);
 	data_key_index = message[6] & GENMASK(1, 0);
 	key_length = message[7];
-	xpon->crypto.key_control_rx_count++;
 	dev_info(
 		xpon->dev,
 		"Key_Control received: seq=%u control=%s data-key-index=%u key-length=%u\n",
@@ -861,7 +856,6 @@ static int airoha_xpon_handle_key_control(struct airoha_xpon *xpon,
 		airoha_xpon_retire_other_data_key(xpon, data_key_index);
 		xpon->crypto.active_data_key_index = data_key_index;
 		xpon->crypto.exchange_state = AIROHA_XGPON_KEY_ACTIVE;
-		xpon->crypto.key_exchange_completed_count++;
 	}
 
 	/* Repeated requests reuse the digest and slot if Confirm Report was lost. */

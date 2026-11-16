@@ -34,7 +34,6 @@ static int airoha_xpon_key_generate(struct airoha_xpon *xpon, u32 type)
 	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_STATUS,
 	                   AIROHA_XGPON_INT_KEY_CAL_DONE);
 	airoha_xgpon_write(xpon, AIROHA_XGPON_KEY_GEN, type);
-	xpon->crypto.generation_runs++;
 	ret = readl_poll_timeout_atomic(
 		xpon->xgpon_base + AIROHA_XGPON_INT_STATUS, status,
 		status & AIROHA_XGPON_INT_KEY_CAL_DONE, 1, 100);
@@ -76,7 +75,6 @@ int airoha_xpon_program_activation_keys(struct airoha_xpon *xpon)
 	 */
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
-	xpon->crypto.o4_key_switch_observed = false;
 	xpon->crypto.generation_failed_type = 0;
 
 	for (i = 0; i < ARRAY_SIZE(default_msk); i++)

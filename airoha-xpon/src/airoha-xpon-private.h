@@ -187,15 +187,8 @@ struct airoha_xpon_stats {
 	unsigned int rx_start_count;
 	unsigned int full_reinit_count;
 	unsigned int no_ready_recovery_count;
-	unsigned int phy_irq_count;
-	unsigned int phy_rx_ready_count;
-	unsigned int phy_sync_count;
-	unsigned int phy_los_count;
 	unsigned int phy_lof_count;
-	unsigned int sn_request_count;
-	unsigned int sn_sent_count;
-	unsigned int ranging_request_count;
-	unsigned int registration_sent_count;
+	/* XG(S)-PON MAC error history since probe; debugfs mac prints it. */
 	unsigned int mac_error_irq_count;
 	unsigned int rx_mbi_header_overrun_irq_count;
 	unsigned int rx_mbi_payload_overrun_irq_count;
@@ -208,7 +201,6 @@ struct airoha_xpon_stats {
 	u32 latched_bwm_check;
 	unsigned int ploamd_accepted;
 	unsigned int ploamd_rejected;
-	unsigned int ploamu_blocked;
 };
 
 struct airoha_xpon_identity_set {
@@ -223,13 +215,9 @@ struct airoha_xpon_crypto_state {
 	struct crypto_sync_skcipher *aes;
 	/* Each controller has a direct-mapped AES bounce block. */
 	u8 aes_block[16];
-	unsigned int generation_runs;
 	u32 generation_failed_type;
 	u32 activation_pon_tag0;
 	u32 activation_pon_tag1;
-	unsigned int key_control_rx_count;
-	unsigned int key_report_tx_count;
-	unsigned int key_exchange_completed_count;
 	unsigned int key_exchange_error_count;
 	enum airoha_xgpon_key_exchange_state exchange_state;
 	u8 data_keys[2][16];
@@ -239,7 +227,6 @@ struct airoha_xpon_crypto_state {
 	u8 active_data_key_index;
 	bool default_ploam_ik_programmed;
 	bool activation_keys_programmed;
-	bool o4_key_switch_observed;
 };
 
 #define AIROHA_XPON_MAX_DATA_PATHS 32
@@ -445,8 +432,7 @@ struct airoha_xpon_leds *airoha_xpon_leds_create(struct device *dev,
                                                  const char *pon_name);
 void airoha_xpon_leds_destroy(void *data);
 void airoha_xpon_leds_update(struct airoha_xpon *xpon);
-void airoha_xpon_clear_mac_errors(struct airoha_xpon *xpon,
-                                  bool clear_software_latch);
+void airoha_xpon_clear_mac_errors(struct airoha_xpon *xpon);
 
 void airoha_xpon_disarm_upstream(struct airoha_xpon *xpon, const char *reason);
 int airoha_xpon_try_arm_upstream(struct airoha_xpon *xpon);

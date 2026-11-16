@@ -39,8 +39,7 @@ static void airoha_xpon_xgpon_stop_mac_interfaces(struct airoha_xpon *xpon,
 			reason, value);
 }
 
-void airoha_xpon_clear_mac_errors(struct airoha_xpon *xpon,
-                                  bool clear_software_latch)
+void airoha_xpon_clear_mac_errors(struct airoha_xpon *xpon)
 {
 	/* Clear detailed W1C errors before their summary bits. */
 	airoha_xgpon_write(xpon, AIROHA_XGPON_FIFO_ERR_STS, U32_MAX);
@@ -49,13 +48,6 @@ void airoha_xpon_clear_mac_errors(struct airoha_xpon *xpon,
 	airoha_xgpon_write(xpon, AIROHA_XGPON_DBG_BWM_CHK_STS, U32_MAX);
 	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_STATUS,
 	                   AIROHA_XGPON_INT_ERROR_MASK);
-
-	if (clear_software_latch) {
-		WRITE_ONCE(xpon->stats.latched_fifo_error, 0);
-		WRITE_ONCE(xpon->stats.latched_tx_error, 0);
-		WRITE_ONCE(xpon->stats.latched_rx_error, 0);
-		WRITE_ONCE(xpon->stats.latched_bwm_check, 0);
-	}
 }
 
 static int airoha_xpon_xgpon_set_tx_interface_stop(struct airoha_xpon *xpon,
@@ -230,13 +222,6 @@ irqreturn_t airoha_xpon_xgpon_phy_irq(struct airoha_xpon *xpon)
 	}
 
 	atomic_or(events, &xpon->phy_events);
-	xpon->stats.phy_irq_count++;
-	if (events & AIROHA_XGPON_PHY_INT_RX_RDY)
-		xpon->stats.phy_rx_ready_count++;
-	if (events & AIROHA_XGPON_PHY_INT_RX_SYNC_OK)
-		xpon->stats.phy_sync_count++;
-	if (events & AIROHA_XGPON_PHY_INT_RX_LOS)
-		xpon->stats.phy_los_count++;
 	if (events & AIROHA_XGPON_PHY_INT_RX_LOF)
 		xpon->stats.phy_lof_count++;
 
@@ -263,22 +248,10 @@ irqreturn_t airoha_xpon_xgpon_irq(struct airoha_xpon *xpon)
 	if (READ_ONCE(xpon->stopping))
 		return IRQ_HANDLED;
 
-	if (events & AIROHA_XGPON_INT_SN_REQUEST)
-		xpon->stats.sn_request_count++;
-	if (events & AIROHA_XGPON_INT_SN_SENT)
-		xpon->stats.sn_sent_count++;
-	if (events & AIROHA_XGPON_INT_RANGING_REQUEST) {
-		u32 key_index;
-
-		xpon->stats.ranging_request_count++;
-		key_index = airoha_xgpon_read(xpon, AIROHA_XGPON_CUR_KIDX);
-		if (!(key_index & AIROHA_XGPON_CUR_PIK_INDEX) &&
-		    !(key_index & AIROHA_XGPON_CUR_OIK_INDEX))
-			WRITE_ONCE(xpon->crypto.o4_key_switch_observed, true);
-	}
-	if (events & AIROHA_XGPON_INT_REGISTRATION_SENT)
-		xpon->stats.registration_sent_count++;
-
+	/*
+	 * SN request, SN sent, ranging request and Registration sent need only
+	 * the acknowledge above: the MAC answers them in hardware.
+	 */
 	if (events & AIROHA_XGPON_INT_ERROR_MASK) {
 		fifo_error = airoha_xgpon_read(xpon, AIROHA_XGPON_FIFO_ERR_STS);
 		tx_error = airoha_xgpon_read(xpon, AIROHA_XGPON_TX_ERR_STS);
@@ -470,12 +443,7 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
-	xpon->crypto.o4_key_switch_observed = false;
-	xpon->crypto.generation_runs = 0;
 	xpon->crypto.generation_failed_type = 0;
-	xpon->crypto.key_control_rx_count = 0;
-	xpon->crypto.key_report_tx_count = 0;
-	xpon->crypto.key_exchange_completed_count = 0;
 	xpon->crypto.key_exchange_error_count = 0;
 	airoha_xpon_clear_assignment(xpon);
 	airoha_xpon_clear_tconts(xpon);
@@ -485,7 +453,7 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 
 	/* Clear bootloader state before enabling activation interrupts. */
 	airoha_xpon_drain_ploamd(xpon);
-	airoha_xpon_clear_mac_errors(xpon, true);
+	airoha_xpon_clear_mac_errors(xpon);
 	airoha_xgpon_write(xpon, AIROHA_XGPON_INT_STATUS,
 	                   AIROHA_XGPON_INT_ACTIVATION_MASK |
 	                           AIROHA_XGPON_INT_ERROR_MASK);
@@ -699,7 +667,6 @@ void airoha_xpon_xgpon_stop_rx(struct airoha_xpon *xpon)
 	xpon->mac_initialized = false;
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
-	xpon->crypto.o4_key_switch_observed = false;
 	xpon->burst_profile_programmed = false;
 	xpon->rx_active = false;
 	xpon->lifecycle = AIROHA_XPON_WAIT_OPTICAL_SIGNAL;
@@ -723,7 +690,6 @@ void airoha_xpon_xgpon_restart_mac(struct airoha_xpon *xpon, const char *reason)
 	xpon->mac_initialized = false;
 	xpon->crypto.default_ploam_ik_programmed = false;
 	xpon->crypto.activation_keys_programmed = false;
-	xpon->crypto.o4_key_switch_observed = false;
 	xpon->burst_profile_programmed = false;
 	xpon->lifecycle = AIROHA_XPON_WAIT_LINE_SYNC;
 

@@ -481,15 +481,41 @@ DEFINE_SHOW_ATTRIBUTE(pon_pcs_debug);
 static int pon_mac_debug_show(struct seq_file *m, void *unused)
 {
 	struct airoha_xpon *xpon = m->private;
+	const struct airoha_xpon_stats *stats = &xpon->stats;
 	bool available, epon;
 
 	mutex_lock(&xpon->state_lock);
 	/* Only the active MAC has a clock under the selected line mode. */
 	available = xpon->active_mode_valid && xpon->mac_initialized;
+	epon = airoha_xpon_mode_is_epon(xpon->active_mode_valid ?
+	                                        xpon->active_mode :
+	                                        xpon->configured_mode);
 	seq_printf(m, "available: %d\n", available);
+	/* The XG(S)-PON error history runs from probe across MAC resets. */
+	if (!epon)
+		seq_printf(m,
+		           "error_interrupts: %u\n"
+		           "rx_mbi_header_overruns: %u\n"
+		           "rx_mbi_payload_overruns: %u\n"
+		           "tx_late_starts: %u\n"
+		           "tx_resyncs: %u\n"
+		           "tx_resync_failures: %u\n"
+		           "latched_fifo_error: 0x%08x\n"
+		           "latched_tx_error: 0x%08x\n"
+		           "latched_rx_error: 0x%08x\n"
+		           "latched_bwm_check: 0x%08x\n",
+		           READ_ONCE(stats->mac_error_irq_count),
+		           READ_ONCE(stats->rx_mbi_header_overrun_irq_count),
+		           READ_ONCE(stats->rx_mbi_payload_overrun_irq_count),
+		           READ_ONCE(stats->tx_late_error_count),
+		           stats->tx_resync_count,
+		           stats->tx_resync_failure_count,
+		           READ_ONCE(stats->latched_fifo_error),
+		           READ_ONCE(stats->latched_tx_error),
+		           READ_ONCE(stats->latched_rx_error),
+		           READ_ONCE(stats->latched_bwm_check));
 	if (!available)
 		goto out;
-	epon = airoha_xpon_mode_is_epon(xpon->active_mode);
 	if (epon) {
 		airoha_xpon_epon_debug_mac(xpon, m);
 	} else {

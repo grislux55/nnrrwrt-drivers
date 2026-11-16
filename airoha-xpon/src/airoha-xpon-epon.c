@@ -1039,13 +1039,8 @@ irqreturn_t airoha_xpon_epon_phy_irq(struct airoha_xpon *xpon)
 	}
 
 	atomic_or(events, &xpon->phy_events);
-	xpon->stats.phy_irq_count++;
-	if (events & AIROHA_XEPON_PCS_INT_SYNC_OK)
-		xpon->stats.phy_sync_count++;
 	if (events & AIROHA_XEPON_PCS_INT_SYNC_LOSS)
 		xpon->stats.phy_lof_count++;
-	if (events & AIROHA_XEPON_PCS_INT_LASER_LOSS)
-		xpon->stats.phy_los_count++;
 	if (events & (AIROHA_XEPON_PCS_INT_LASER_LOSS |
 	              AIROHA_XEPON_PCS_INT_NO_LASER_LOSS))
 		mod_delayed_work(system_wq, &xpon->link_work, 0);

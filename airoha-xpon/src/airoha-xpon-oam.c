@@ -5,7 +5,9 @@
 #include <linux/bitfield.h>
 #include <linux/device.h>
 #include <linux/if_arp.h>
+#include <linux/if_ether.h>
 #include <linux/netdevice.h>
+#include <linux/pkt_sched.h>
 #include <linux/rtnetlink.h>
 #include <linux/skbuff.h>
 
@@ -191,4 +193,44 @@ void airoha_xpon_oam_wake_tx(struct airoha_xpon_oam *oam)
 
 	if (netif_queue_stopped(oam->netdev))
 		netif_wake_queue(oam->netdev);
+}
+
+/*
+ * Queue a kernel-built OAMPDU through the same qdisc and transmit path as
+ * AF_PACKET senders. Callable from BH context.
+ */
+int airoha_xpon_oam_send(struct airoha_xpon_oam *oam, const void *pdu,
+                         unsigned int len)
+{
+	struct net_device *netdev;
+	struct sk_buff *skb;
+	unsigned int headroom;
+	int ret;
+
+	if (!oam)
+		return -ENODEV;
+	if (!len || len > AIROHA_OAM_MAX_PDU_LEN)
+		return -EINVAL;
+
+	netdev = oam->netdev;
+	if (!netif_running(netdev) ||
+	    !(READ_ONCE(oam->tx_context) & AIROHA_OAM_CTX_READY))
+		return -ENOLINK;
+
+	headroom = LL_RESERVED_SPACE(netdev);
+	skb = alloc_skb(headroom + len + netdev->needed_tailroom, GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_reserve(skb, headroom);
+	skb_put_data(skb, pdu, len);
+	skb_reset_mac_header(skb);
+	skb_reset_network_header(skb);
+	skb->dev = netdev;
+	skb->protocol = htons(ETH_P_SLOW);
+	skb->priority = TC_PRIO_CONTROL;
+
+	ret = dev_queue_xmit(skb);
+
+	return ret > 0 ? net_xmit_errno(ret) : ret;
 }

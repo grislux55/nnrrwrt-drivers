@@ -766,6 +766,11 @@ static int airoha_xpon_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, ret,
 		                     "failed to register the PON PHY IRQ\n");
 
+	/* PON runs without dying gasp, so a failure here is not fatal. */
+	ret = airoha_xpon_dying_gasp_init(pdev, xpon);
+	if (ret)
+		dev_warn(dev, "dying gasp is unavailable (%d)\n", ret);
+
 	platform_set_drvdata(pdev, xpon);
 	ret = airoha_eth_pon_register_controller(xpon->pon_netdev,
 	                                         &airoha_xpon_link_ops, xpon);

@@ -34,6 +34,7 @@
 #define AIROHA_XGPON_GEM_PORT_CFG       0x0274
 #define AIROHA_XGPON_GEM_PORT_STS       0x0278
 #define AIROHA_XGPON_IDLE_GEM_CTRL      0x0280
+#define AIROHA_XGPON_DYING_GASP_CTRL    0x0284
 #define AIROHA_XGPON_PLOAMU_FIFO_STS    0x0300
 #define AIROHA_XGPON_PLOAMU_WDATA       0x0304
 #define AIROHA_XGPON_PLOAMD_FIFO_STS    0x0308
@@ -264,6 +265,15 @@
 #define AIROHA_XGPON_IDLE_GEM_THRESHOLD_MASK   GENMASK(15, 0)
 #define AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGPON  0x001a
 #define AIROHA_XGPON_IDLE_GEM_THRESHOLD_XGSPON 0x0034
+
+/*
+ * DYING_GASP_CTRL bit 0 selects hardware dying gasp; [31:12] is the num
+ * argument of stock gponDevSetDyingGaspMode(). An untouched MAC reads
+ * 0xffffe001 and stock gpon_dev_init() leaves 0x000ff001.
+ */
+#define AIROHA_XGPON_DYING_GASP_HW_MODE   BIT(0)
+#define AIROHA_XGPON_DYING_GASP_NUM_MASK  GENMASK(31, 12)
+#define AIROHA_XGPON_DYING_GASP_NUM_STOCK 0xff
 
 /*
  * PLOAMd FIFO used counts 32-bit words. A downstream PLOAM occupies 13 words;

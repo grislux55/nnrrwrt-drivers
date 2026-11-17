@@ -20,9 +20,11 @@ struct crypto_sync_skcipher;
 struct device;
 struct net_device;
 struct phylink_pcs;
+struct platform_device;
 struct regmap;
 struct airoha_xpon_omci;
 struct airoha_xpon_oam;
+struct airoha_xpon_dying_gasp;
 
 enum airoha_xpon_control_protocol {
 	AIROHA_XPON_CONTROL_OMCI,
@@ -275,6 +277,8 @@ struct airoha_xpon {
 	struct net_device *pon_netdev;
 	struct airoha_xpon_omci *omci;
 	struct airoha_xpon_oam *oam;
+	/* Set when the board DTS names the dying-gasp interrupt. */
+	struct airoha_xpon_dying_gasp *dying_gasp;
 	struct airoha_xpon_leds *leds;
 	struct airoha_xpon_crypto_state crypto;
 	struct airoha_xpon_identity_set identity;
@@ -476,6 +480,8 @@ void airoha_xpon_xgpon_counters_start(struct airoha_xpon *xpon);
 void airoha_xpon_xgpon_counters_update(struct airoha_xpon *xpon);
 void airoha_xpon_debugfs_init(struct airoha_xpon *xpon);
 void airoha_xpon_debugfs_remove(struct airoha_xpon *xpon);
+int airoha_xpon_dying_gasp_init(struct platform_device *pdev,
+                                struct airoha_xpon *xpon);
 extern const struct attribute_group *airoha_xpon_groups[];
 
 #endif

@@ -437,6 +437,14 @@ static int airoha_xpon_xgpon_start_control(struct airoha_xpon *xpon)
 	                                 AIROHA_XGPON_DBG_HW_DS_OMCI_MIC);
 	airoha_xgpon_update_bits(xpon, AIROHA_XGPON_DBG_RESYNC,
 	                         AIROHA_XGPON_TX_LATE_AUTO_RESYNC, 0);
+	if (xpon->dying_gasp)
+		airoha_xgpon_update_bits(
+			xpon, AIROHA_XGPON_DYING_GASP_CTRL,
+			AIROHA_XGPON_DYING_GASP_HW_MODE |
+				AIROHA_XGPON_DYING_GASP_NUM_MASK,
+			AIROHA_XGPON_DYING_GASP_HW_MODE |
+				FIELD_PREP(AIROHA_XGPON_DYING_GASP_NUM_MASK,
+				           AIROHA_XGPON_DYING_GASP_NUM_STOCK));
 	airoha_pon_phy_update_bits(xpon, AIROHA_XGPON_PHY_XG_CONTINUE_CTRL,
 	                           AIROHA_XGPON_PHY_CONTINUE_MASK, 0);
 	airoha_xpon_xgpon_program_identity(xpon);

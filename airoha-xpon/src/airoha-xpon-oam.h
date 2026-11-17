@@ -18,5 +18,7 @@ void airoha_xpon_oam_set_link(struct airoha_xpon_oam *oam, bool ready, u16 llid,
 void airoha_xpon_oam_receive(struct airoha_xpon_oam *oam, struct sk_buff *skb,
                              const struct airoha_pon_ctrl_rx_info *info);
 void airoha_xpon_oam_wake_tx(struct airoha_xpon_oam *oam);
+int airoha_xpon_oam_send(struct airoha_xpon_oam *oam, const void *pdu,
+                         unsigned int len);
 
 #endif

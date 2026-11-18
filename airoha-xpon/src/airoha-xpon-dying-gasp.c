@@ -16,6 +16,7 @@
 #include <linux/gpio/driver.h>
 #include <linux/if_ether.h>
 #include <linux/interrupt.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
@@ -34,6 +35,14 @@
 /* Stock kills tcwdog on dying gasp; its 28 s watchdog then resets the SoC. */
 #define AIROHA_DYING_GASP_REBOOT_MS  28000
 #define AIROHA_DYING_GASP_OAMPDU_LEN 60
+
+/*
+ * Load-time switch for a board whose supply-drop interrupt misfires:
+ * "options airoha-xpon dying_gasp=0" in /etc/modules.conf.
+ */
+static bool dying_gasp = true;
+module_param(dying_gasp, bool, 0444);
+MODULE_PARM_DESC(dying_gasp, "Act on the supply-drop interrupt (default: on)");
 
 struct airoha_xpon_dying_gasp {
 	struct airoha_xpon *xpon;
@@ -237,6 +246,13 @@ int airoha_xpon_dying_gasp_init(struct platform_device *pdev,
 		return 0;
 	if (irq < 0)
 		return irq;
+
+	if (!dying_gasp) {
+		dev_info(dev,
+		         "supply-drop interrupt %d is not used: dying_gasp=0\n",
+		         irq);
+		return 0;
+	}
 
 	dg = devm_kzalloc(dev, sizeof(*dg), GFP_KERNEL);
 	if (!dg)

@@ -5,6 +5,7 @@
 #include <airoha-pon-frontend.h>
 #include <linux/atomic.h>
 #include <linux/bitfield.h>
+#include <linux/if_ether.h>
 #include <linux/io.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
@@ -210,6 +211,9 @@ struct airoha_xpon_identity_set {
 	struct airoha_xpon_identity default_identity;
 	struct airoha_xpon_identity pending_identity;
 	struct airoha_xpon_identity active_identity;
+	/* Board EPON registration address from the epon-mac-address cell. */
+	u8 epon_mac[ETH_ALEN];
+	bool epon_mac_valid;
 };
 
 /* Crypto and PLOAM share PIK/OIK/KEK and data-key epoch state. */
@@ -431,6 +435,7 @@ int airoha_xpon_mode_parse(const char *name, enum airoha_xpon_mode *mode);
 int airoha_xpon_mode_get_default(struct device *dev,
                                  enum airoha_xpon_mode *mode);
 int airoha_xpon_identity_init(struct device *dev, struct airoha_xpon *xpon);
+void airoha_xpon_identity_epon_mac(struct airoha_xpon *xpon, u8 *mac);
 int airoha_xpon_create_control_rtnl(struct airoha_xpon *xpon);
 int airoha_xpon_set_mode_locked(struct airoha_xpon *xpon,
                                 enum airoha_xpon_mode mode);

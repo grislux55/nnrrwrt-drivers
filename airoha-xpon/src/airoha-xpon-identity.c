@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/ctype.h>
+#include <linux/etherdevice.h>
 #include <linux/module.h>
+#include <linux/netdevice.h>
 #include <linux/nvmem-consumer.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -30,6 +32,64 @@ static bool airoha_xpon_identity_is_blank(const u8 *data, size_t len)
 	}
 
 	return all_zero || all_ff;
+}
+
+/*
+ * Stock registers the EPON LLID with the board base MAC plus the hwconfig
+ * Llid.Mac.Offset. A board names that address in the epon-mac-address NVMEM
+ * cell. Boards without the cell register with the PON netdev address.
+ */
+static int airoha_xpon_identity_read_epon_mac(struct device *dev,
+                                              struct airoha_xpon *xpon)
+{
+	struct nvmem_cell *cell;
+	size_t len;
+	u8 *mac;
+	int ret;
+
+	cell = devm_nvmem_cell_get(dev, "epon-mac-address");
+	if (IS_ERR(cell)) {
+		ret = PTR_ERR(cell);
+		if (ret == -EPROBE_DEFER)
+			return ret;
+		if (ret != -ENOENT)
+			dev_warn(dev, "EPON MAC address is unavailable: %pe\n",
+			         cell);
+		return 0;
+	}
+
+	mac = nvmem_cell_read(cell, &len);
+	if (IS_ERR(mac)) {
+		dev_warn(dev, "failed to read the EPON MAC address: %pe\n",
+		         mac);
+		return 0;
+	}
+	if (len == ETH_ALEN && is_valid_ether_addr(mac)) {
+		memcpy(xpon->identity.epon_mac, mac, ETH_ALEN);
+		xpon->identity.epon_mac_valid = true;
+	} else {
+		dev_warn(dev, "ignoring invalid EPON MAC address (%zu bytes)\n",
+		         len);
+	}
+	kfree(mac);
+
+	return 0;
+}
+
+/*
+ * The cell applies while the PON netdev carries its permanent address. An
+ * address assigned to the PON netdev replaces it, so MAC cloning on the PON
+ * interface also selects the EPON registration address.
+ */
+void airoha_xpon_identity_epon_mac(struct airoha_xpon *xpon, u8 *mac)
+{
+	const struct net_device *netdev = xpon->pon_netdev;
+	const u8 *source = netdev->dev_addr;
+
+	if (xpon->identity.epon_mac_valid &&
+	    ether_addr_equal(source, netdev->perm_addr))
+		source = xpon->identity.epon_mac;
+	memcpy(mac, source, ETH_ALEN);
 }
 
 int airoha_xpon_identity_init(struct device *dev, struct airoha_xpon *xpon)
@@ -130,5 +190,6 @@ registration:
 
 	/* ndo_open latches the pending identity for the active line epoch. */
 	xpon->identity.pending_identity = *identity_default;
-	return 0;
+
+	return airoha_xpon_identity_read_epon_mac(dev, xpon);
 }

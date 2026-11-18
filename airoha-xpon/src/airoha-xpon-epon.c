@@ -367,12 +367,13 @@ static int airoha_xpon_epon_wait_mac_table(struct airoha_xpon *xpon)
 
 static int airoha_xpon_epon_program_mac(struct airoha_xpon *xpon)
 {
-	const u8 *mac = xpon->pon_netdev->dev_addr;
-	u32 high = (u32)mac[0] << 8 | mac[1];
-	u32 low = (u32)mac[2] << 24 | (u32)mac[3] << 16 | (u32)mac[4] << 8 |
-	          mac[5];
-
+	u8 mac[ETH_ALEN];
+	u32 high, low;
 	int ret;
+
+	airoha_xpon_identity_epon_mac(xpon, mac);
+	high = (u32)mac[0] << 8 | mac[1];
+	low = (u32)mac[2] << 24 | (u32)mac[3] << 16 | (u32)mac[4] << 8 | mac[5];
 
 	ret = airoha_xpon_epon_wait_mac_table(xpon);
 	if (ret)

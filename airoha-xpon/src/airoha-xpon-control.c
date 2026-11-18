@@ -335,6 +335,17 @@ static ssize_t service_ready_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(service_ready);
 
+static ssize_t epon_mac_address_show(struct device *dev,
+                                     struct device_attribute *attr, char *buf)
+{
+	struct airoha_xpon *xpon = dev_get_drvdata(dev);
+	u8 mac[ETH_ALEN];
+
+	airoha_xpon_identity_epon_mac(xpon, mac);
+	return sysfs_emit(buf, "%pM\n", mac);
+}
+static DEVICE_ATTR_RO(epon_mac_address);
+
 static struct attribute *airoha_xpon_attrs[] = {
 	&dev_attr_serial_number.attr,
 	&dev_attr_active_serial_number.attr,
@@ -342,6 +353,8 @@ static struct attribute *airoha_xpon_attrs[] = {
 	&dev_attr_omci_msk.attr,
 	&dev_attr_data_path.attr,
 	&dev_attr_service_ready.attr,
+	/* OAM agents send from the address the EPON MAC registers with. */
+	&dev_attr_epon_mac_address.attr,
 	NULL,
 };
 static const struct attribute_group airoha_xpon_group = {

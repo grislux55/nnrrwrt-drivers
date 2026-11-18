@@ -16,7 +16,6 @@
 #include <linux/gpio/driver.h>
 #include <linux/if_ether.h>
 #include <linux/interrupt.h>
-#include <linux/netdevice.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/reboot.h>
@@ -102,7 +101,7 @@ static void airoha_xpon_dying_gasp_notify(struct work_struct *work)
 	u8 pdu[AIROHA_DYING_GASP_OAMPDU_LEN];
 
 	memcpy(pdu, airoha_dying_gasp_oampdu, sizeof(pdu));
-	memcpy(&pdu[ETH_ALEN], xpon->pon_netdev->dev_addr, ETH_ALEN);
+	airoha_xpon_identity_epon_mac(xpon, &pdu[ETH_ALEN]);
 	dg->oam_ret = airoha_xpon_oam_send(xpon->oam, pdu, sizeof(pdu));
 	schedule_work(&dg->report_work);
 }
